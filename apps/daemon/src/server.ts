@@ -941,6 +941,7 @@ import {
 } from './library-tokens.js';
 import { listLibraryTokenOrigins } from './library-store.js';
 import { apiTokenFromEnv, isApiAuthDisabled, isApiTokenMiddlewareEnabled } from './api-token-auth.js';
+import { registerTalosEmbedRoutes } from './routes/talos-embed.js';
 import { createOpenDesignPublicMetadataService } from './services/open-design-public-metadata.js';
 import { createWhatsNewService } from './services/whats-new.js';
 import { execCommandViaLoginShell } from './services/login-shell.js';
@@ -2433,6 +2434,10 @@ export async function startServer({
   app.use(express.json({ limit: '4mb' }));
   const projectPreviewScopes = createProjectPreviewScopeRegistry();
 
+  // Talos launch tickets are exchanged for project-scoped, HTTP-only editor
+  // sessions before the general API bearer-token middleware is installed.
+  const talosEmbed = registerTalosEmbedRoutes(app);
+
   // Plan §3.K1 — bearer-token middleware.
   //
   // Active only when OD_API_TOKEN is set and API auth is not disabled.
@@ -2456,6 +2461,11 @@ export async function startServer({
     ]);
     app.use('/api', (req, res, next) => {
       if (openProbePaths.has(req.path)) return next();
+      if (talosEmbed.configured) {
+        let completed = false;
+        talosEmbed.apiSession(req, res, () => { completed = true; });
+        if (!completed || res.headersSent) return;
+      }
       if (req.method === 'GET') {
         const previewAsset = parseProjectPreviewAssetPath(req.path);
         if (

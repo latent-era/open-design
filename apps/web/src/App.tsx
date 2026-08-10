@@ -1244,6 +1244,16 @@ function AppInner() {
   // can't overwrite the saved state with `''` before hydration lands.
   const [composioConfigLoading, setComposioConfigLoading] = useState(true);
   const route = useRoute();
+  const talosEmbedMode =
+    route.kind === 'project' &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('talos') === '1';
+  useEffect(() => {
+    if (!talosEmbedMode) return;
+    const previousTitle = document.title;
+    document.title = 'Talos Design Studio';
+    return () => { document.title = previousTitle; };
+  }, [talosEmbedMode]);
   const routeRef = useRef(route);
   routeRef.current = route;
   const settingsReturnTargetRef = useRef<SettingsReturnTarget | null>(null);
@@ -5094,11 +5104,11 @@ function AppInner() {
   return (
     <>
       <div
-        className={`workspace-shell workspace-shell--${clientType}`}
+        className={`workspace-shell workspace-shell--${clientType}${talosEmbedMode ? ' workspace-shell--talos-embed' : ''}`}
         data-client-type={clientType}
         data-host-platform={hostPlatform}
       >
-        <WorkspaceTabsBar
+        {talosEmbedMode ? null : <WorkspaceTabsBar
           route={route}
           // The ambient list may still be loading (or belong to a different
           // selected Workspace) while a deep-linked project is already open.
@@ -5116,12 +5126,12 @@ function AppInner() {
           }
           onboardingCompleted={config.onboardingCompleted === true}
           identityScopeKey={workspaceTabsIdentityScopeKey}
-        />
+        />}
         <div className="workspace-shell__body">
           {appMain}
         </div>
       </div>
-      {clientType === 'desktop' ? null : (
+      {clientType === 'desktop' || talosEmbedMode ? null : (
         <PetOverlay
           pet={config.pet?.enabled ? config.pet : undefined}
           taskCenter={petTaskCenter}

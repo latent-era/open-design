@@ -10,6 +10,8 @@ services:
     restart: always
     environment:
       NODE_ENV: production
+      HOME: /app/.od
+      CODEX_HOME: /app/.od/codex
       NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
       OD_BIND_HOST: 0.0.0.0
       OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-}
@@ -18,6 +20,11 @@ services:
       OD_API_TOKEN: ${OD_API_TOKEN:-}
       OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
       OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OD_TALOS_SESSION_SECRET: ${OD_TALOS_SESSION_SECRET:-}
+      OD_TALOS_FRAME_ANCESTORS: ${OD_TALOS_FRAME_ANCESTORS:-}
+      OD_TALOS_COOKIE_SECURE: ${OD_TALOS_COOKIE_SECURE:-1}
     ports:
       - "127.0.0.1:${OPEN_DESIGN_PORT:-7456}:7456"
     volumes:

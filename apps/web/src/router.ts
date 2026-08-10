@@ -421,7 +421,9 @@ interface NavigationOptions {
 }
 
 function commitNavigation(route: Route, opts: NavigationOptions = {}): void {
-  const target = buildPath(route);
+  const talosProjectId = talosEmbedProjectId();
+  if (talosProjectId && (route.kind !== 'project' || route.projectId !== talosProjectId)) return;
+  const target = `${buildPath(route)}${talosProjectId ? '?talos=1' : ''}`;
   if (target === window.location.pathname) return;
   const index = readHistoryIndex();
   // `replace` keeps the current depth (it swaps the entry in place); a push
@@ -455,6 +457,7 @@ export function navigate(route: Route, opts: NavigationOptions = {}): void {
 // (`odIndex` 0: deep link or fresh load), there is nothing in-app to pop, so we
 // navigate to `fallback` instead of letting `history.back()` escape the app.
 export function goBack(fallback: Route): void {
+  if (talosEmbedProjectId()) return;
   runGuardedNavigation((sequence) => {
     const index = readHistoryIndex();
     if (index > 0) {
@@ -464,6 +467,13 @@ export function goBack(fallback: Route): void {
       commitNavigation(fallback, { replace: true });
     }
   });
+}
+
+function talosEmbedProjectId(): string | null {
+  if (typeof window === 'undefined') return null;
+  if (new URLSearchParams(window.location.search).get('talos') !== '1') return null;
+  const route = parseRoute(window.location.pathname);
+  return route.kind === 'project' ? route.projectId : null;
 }
 
 let cachedPathname: string | null = null;

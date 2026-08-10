@@ -2908,8 +2908,12 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       // lookup needed (a `listWorkspaceProjectBindings` scan here would only
       // ever resolve to misses).
       /** @type {import('@open-design/contracts').ProjectsResponse} */
+      const talosProjectId = typeof res.locals.talosSession?.open_design_project_id === 'string'
+        ? res.locals.talosSession.open_design_project_id
+        : null;
       const body = {
         projects: listUnboundProjects(db)
+          .filter((project: { id: string }) => !talosProjectId || project.id === talosProjectId)
           .filter((project: any) => projectVisibleForLocations(project, locations))
           .map((project: any) => ({
             ...project,
