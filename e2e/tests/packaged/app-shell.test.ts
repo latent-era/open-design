@@ -90,7 +90,7 @@ function probe(document: PackagedAppShellProbeDocument): PackagedAppShellSnapsho
   return snapshot;
 }
 
-// The surface a signed-in or onboarding-seeded packaged app comes up on.
+// The surface a signed-in packaged app comes up on.
 const HOME_SHELL: readonly FixtureNode[] = [
   { classes: ['entry-shell'] },
   { attributes: { 'data-testid': 'entry-nav-home' }, classes: ['entry-nav__item'] },
@@ -235,13 +235,13 @@ describe('packaged app-shell terminal state', () => {
 // fact, so the policy reads the daemon's own `onboardingCompleted` (served from
 // `readAppConfig(RUNTIME_DATA_DIR)`) rather than the smoke profile.
 describe('packaged app-shell policy', () => {
-  it('requires home once the daemon confirms onboarding is completed', () => {
+  it('accepts the signed-out identity gate once completion is retained', () => {
     expect(
       packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: true, seededOnboardingCompleted: false }),
-    ).toEqual({ acceptOnboardingLanding: false });
+    ).toEqual({ acceptOnboardingLanding: true });
     expect(
       packagedAppShellPolicy({ coreProfile: false, daemonOnboardingCompleted: true, seededOnboardingCompleted: false }),
-    ).toEqual({ acceptOnboardingLanding: false });
+    ).toEqual({ acceptOnboardingLanding: true });
   });
 
   it('accepts the landing only when the daemon reports onboarding is not completed', () => {
@@ -250,12 +250,11 @@ describe('packaged app-shell policy', () => {
     ).toEqual({ acceptOnboardingLanding: true });
   });
 
-  it('keeps a seeded run failing when the app ignores completed onboarding', () => {
+  it('lets a completed but signed-out user settle on the identity gate', () => {
     const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
     const policy = packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: true, seededOnboardingCompleted: false });
 
-    expect(packagedAppShellSettled(landing, policy)).toBe(false);
-    expect(packagedAppShellFailureReason(landing, policy)).toContain('needs home');
+    expect(packagedAppShellSettled(landing, policy)).toBe(true);
   });
 
   // Swept alongside the probe fix: both of these read their input for
@@ -566,20 +565,20 @@ describe('packaged launch scenarios', () => {
     expect(result).toEqual({ appShell: 'home', onboardingCompleted: true });
   });
 
-  it('fails a completed user that lands on onboarding instead of home', async () => {
+  it('settles a completed but signed-out user on the cloud identity gate', async () => {
     const clock = virtualClock();
     const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
 
-    await expect(
-      runPackagedAppShellPhase({
-        coreProfile: true,
-        now: clock.now,
-        observe: async () => landing,
-        readOnboardingConfig: async () => ({ kind: 'reading', ok: true, onboardingCompleted: true, status: 200 }),
-        scenario: 'completed-user',
-        sleep: clock.sleep,
-      }),
-    ).rejects.toThrow(/needs home/);
+    const result = await runPackagedAppShellPhase({
+      coreProfile: true,
+      now: clock.now,
+      observe: async () => landing,
+      readOnboardingConfig: async () => ({ kind: 'reading', ok: true, onboardingCompleted: true, status: 200 }),
+      scenario: 'completed-user',
+      sleep: clock.sleep,
+    });
+
+    expect(result).toEqual({ appShell: 'onboarding-landing', onboardingCompleted: true });
   });
 
   it('fails a completed user whose seeded state was lost across the relaunch', async () => {

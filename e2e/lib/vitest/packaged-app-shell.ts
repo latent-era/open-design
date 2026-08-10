@@ -90,8 +90,9 @@ export function asPackagedAppShellSnapshot(value: unknown): PackagedAppShellSnap
 /**
  * A surface the packaged app can legitimately come to rest on.
  *
- * `home` is the signed-in/seeded main shell. `onboarding-landing` is the cloud
- * sign-in landing a first run stops at.
+ * `home` is the signed-in main shell. `onboarding-landing` is the cloud
+ * identity gate shown both on a genuine first run and when a previously
+ * completed user is definitively signed out.
  */
 export type PackagedAppShellState = 'home' | 'onboarding-landing';
 
@@ -335,27 +336,27 @@ export type PackagedAppShellPolicyInput = {
 /**
  * Which terminal states this run may settle on.
  *
- * Derived from the daemon's own `onboardingCompleted`, never from the smoke
- * profile, so a run's setup and its accepted terminal state cannot disagree.
- * The smoke seeds `onboardingCompleted: true` before start; if the daemon
- * confirms it, the renderer must honour it and home is the only acceptable
- * outcome — that is what keeps a broken completed-onboarding boot path
- * detectable on the core release lane. Only a run whose daemon reports
- * onboarding as *not* completed is a genuine first run, and only then is the
- * cloud sign-in landing a legitimate place to stop.
+ * The daemon's own `onboardingCompleted` remains the authority for whether a
+ * seed survived a relaunch. It is not, however, an authentication fact: the
+ * current EntryShell deliberately returns a completed-but-signed-out user to
+ * the Cloud identity gate. A retained completed seed may therefore settle on
+ * either Home (signed in) or the positively identified Cloud landing (signed
+ * out). `assertSeededOnboardingRetained` still fails before this policy can
+ * absorb a missing or false seed.
  *
- * `coreProfile` still narrows it: the full profile goes on to drive the entry
- * rail, which `clickUpdaterRailExpression` refuses while onboarding is up, so
- * it needs home either way.
+ * `coreProfile` only narrows a genuinely fresh, unseeded launch. Full release
+ * acceptance controls the Shell updater through the Shell IPC plane, so it is
+ * intentionally independent of the Closure route and Cloud login state.
  */
 export function packagedAppShellPolicy(
   input: PackagedAppShellPolicyInput,
 ): { readonly acceptOnboardingLanding: boolean } {
-  // A run that seeded completion and saw the daemon confirm it may never accept
-  // the landing, whatever a later reading says. Losing the seed across a
-  // relaunch is a regression, not a downgrade to "genuine first run" — see
-  // `assertSeededOnboardingRetained`, which is what turns that loss into a
-  // named failure rather than merely a stricter expectation here.
+  // Exact true means the persisted completion fact survived. The renderer may
+  // still choose the identity gate when Cloud reports signed out.
+  if (input.daemonOnboardingCompleted === true) return { acceptOnboardingLanding: true };
+  // A seeded run that no longer reads true is a regression, not a genuine
+  // first run. `assertSeededOnboardingRetained` raises the named error before
+  // settling; keep this direction closed as a second line of defence.
   if (input.seededOnboardingCompleted !== false) return { acceptOnboardingLanding: false };
   // Only an explicit `false` — a daemon that positively said "not completed" —
   // buys permission. Testing for truthiness instead would let any non-boolean
@@ -449,8 +450,9 @@ export function assertSeededOnboardingRetained(input: {
  * `shouldRouteToFirstRunOnboarding` (apps/web/src/App.tsx) keys purely on
  * `onboardingCompleted`, and `connectStepRuntimeReady` (EntryShell.tsx) lets
  * onboarding complete through cloud sign-in *or* a local CLI *or* a verified
- * BYOK key. So "completed setup, currently signed out -> home" and "never
- * completed -> cloud sign-in landing" are both correct.
+ * BYOK key. In addition, EntryShell's Cloud identity effect means "completed
+ * setup, currently signed out -> cloud sign-in landing" is also correct; the
+ * daemon config and rendered identity surface are separate assertions.
  */
 export type PackagedLaunchScenario = 'completed-user' | 'first-run';
 
