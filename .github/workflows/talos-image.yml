@@ -52,3 +52,11 @@ jobs:
           build-args: |
             NODE_IMAGE=public.ecr.aws/docker/library/node:24-alpine
             RUNTIME_IMAGE=public.ecr.aws/docker/library/node:24-alpine
+      - name: Publish sidecar package for anonymous production pulls
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method PATCH \
+            "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/od/visibility" \
+            -f visibility=public
