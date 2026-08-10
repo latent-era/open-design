@@ -81,6 +81,8 @@ COPY plugins/_official ./plugins/_official
 FROM ${RUNTIME_IMAGE}
 
 RUN apk add --no-cache tini poppler-utils bash git && \
+    npm install --global @openai/codex@0.147.0 && \
+    npm cache clean --force && \
     addgroup -S -g 1001 open-design && \
     adduser -S -D -H -u 1001 -G open-design open-design
 
@@ -107,6 +109,8 @@ ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=192
 ENV OD_BIND_HOST=0.0.0.0
 ENV OD_PORT=7456
+ENV HOME=/app/.od
+ENV CODEX_HOME=/app/.od/codex
 
 EXPOSE 7456
 

@@ -75,6 +75,23 @@ through that authenticated proxy. It disables daemon-side bearer enforcement for
 all `/api/*` requests, so direct access to the daemon must remain blocked. The
 Compose variable maps to daemon env `OD_DISABLE_API_AUTH`.
 
+## Talos embed sessions
+
+The Latent Era fork can be embedded by Talos without exposing `OD_API_TOKEN` or
+depending on provider OAuth. Configure a shared 32-byte-or-longer secret and the
+exact Talos web origins:
+
+```bash
+OD_TALOS_SESSION_SECRET="$(openssl rand -hex 32)"
+OD_TALOS_FRAME_ANCESTORS=https://app.example.com,https://talos.example.com
+```
+
+Talos signs a five-minute launch ticket. Open Design exchanges it for a secure,
+HTTP-only 12-hour editor cookie and redirects directly to the authorized
+project. Opening Studio again obtains a fresh ticket and silently renews the
+cookie. Keep `OD_API_TOKEN` enabled for server-to-server synchronization; it is
+never sent to the browser.
+
 Pin a specific published image with a digest instead of the mutable `latest` tag:
 
 ```bash
