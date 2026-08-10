@@ -735,8 +735,8 @@ winDescribe('packaged windows runtime smoke', () => {
       expect(pty.exitCode, JSON.stringify(pty, null, 2)).toBe(0);
       expect(pty.cleanup.terminalStatus).toBe(200);
       expect(pty.cleanup.projectStatus).toBe(200);
-      assertLauncherPointer(inspect.launcher.active, updateScenario.expectedInstalledShellVersion, 0, 'initial active');
-      assertLauncherPointer(inspect.launcher.lastSuccessful, updateScenario.expectedInstalledShellVersion, 0, 'initial lastSuccessful');
+      assertLauncherPointer(inspect.launcher.active, updateScenario.expectedCurrentVersion, 0, 'initial active');
+      assertLauncherPointer(inspect.launcher.lastSuccessful, updateScenario.expectedCurrentVersion, 0, 'initial lastSuccessful');
 
       // The seed's postcondition, asserted where it must hold: this process was
       // started by `tools-pack win start`, which points the packaged runtime at
@@ -1232,7 +1232,7 @@ winDescribe('packaged windows runtime smoke', () => {
         lastSuccessful?: { generation?: number; version?: string };
       };
       expect(strandedRuntime.active?.version).toBe(targetVersion);
-      expect(strandedRuntime.lastSuccessful?.version).toBe(updateScenario.expectedInstalledShellVersion);
+      expect(strandedRuntime.lastSuccessful?.version).toBe(updateScenario.expectedCurrentVersion);
       expect(strandedAttempt.generation).toBe(strandedRuntime.active?.generation);
 
       // Cold start rolls back: the installed outer sees the unconfirmed
@@ -1246,7 +1246,7 @@ winDescribe('packaged windows runtime smoke', () => {
         start.pid,
         false,
       );
-      expect(rolledBack.launcher.lastSuccessful?.version).toBe(updateScenario.expectedInstalledShellVersion);
+      expect(rolledBack.launcher.lastSuccessful?.version).toBe(updateScenario.expectedCurrentVersion);
       // Degraded steady state: the broken pointer stays active with its
       // attempt as evidence until a healthy release replaces it.
       expect(rolledBack.launcher.active?.version).toBe(targetVersion);
