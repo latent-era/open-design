@@ -13,20 +13,46 @@ if (args[0] === 'models') {
   process.exit(0);
 }
 
+function isRuntimeReadyForMode(status, targetMode) {
+  if (!status || typeof status !== 'object') return false;
+  return targetMode === 'chat'
+    ? status.qwen_active === true && status.qwen_status_active === true
+    : status.ds4_active === true;
+}
+
 async function selectRuntime() {
   if (args.includes('--version') || !mode) return;
   const baseUrl = String(process.env.LOCAL_LLM_CONTROL_URL || '').replace(/\/+$/u, '');
   const token = String(process.env.LOCAL_LLM_CONTROL_TOKEN || '');
   if (!baseUrl || !token) throw new Error('Talos local runtime control is not configured');
+  const authHeader = { authorization: `Bearer ${token}` };
 
+  // Every chat turn spawns `opencode` through this wrapper, not just an
+  // explicit model switch. Without this check, every single message paid the
+  // full switch cost (and could exceed the request timeout below) even when
+  // the target model was already loaded and nothing needed to change —
+  // this was failing ordinary chat turns with "aborted due to timeout".
+  const statusResponse = await fetch(`${baseUrl}/status`, {
+    headers: authHeader,
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => null);
+  if (statusResponse?.ok) {
+    const status = await statusResponse.json().catch(() => null);
+    if (isRuntimeReadyForMode(status, mode)) return;
+  }
+
+  // A cold model load can take minutes (observed >190s in production), so
+  // this only fires when a real switch is needed (the check above skips it
+  // otherwise), and gets a generous ceiling rather than the request's own
+  // lifetime deciding success.
   const response = await fetch(`${baseUrl}/mode`, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${token}`,
+      ...authHeader,
       'content-type': 'application/json',
     },
     body: JSON.stringify({ mode }),
-    signal: AbortSignal.timeout(190_000),
+    signal: AbortSignal.timeout(600_000),
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
