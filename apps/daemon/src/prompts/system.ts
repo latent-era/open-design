@@ -1408,11 +1408,13 @@ export function composeSystemPrompt({
 
 You are the selected local implementation model. You can inspect HTML, CSS, the DOM, and managed audit results directly, but your model endpoint is text-only. Do not claim to have visually inspected pixels yourself.
 
+When the user supplies visual-reference images, analyse them as one board before editing. Pass each local attachment path with a separate \`--image\` argument (up to eight), and ask the reviewer to extract reusable hierarchy, composition, typography, colour-role, component, interaction, and accessibility principles without copying branding or proprietary assets. This reference-board review is distinct from final render verification.
+
 For visually important HTML changes, first run the mandatory managed prototype audit. It saves mobile and desktop screenshots and reports their paths. After the audit passes structurally, run one delegated visual review over those screenshots:
 
 \`talos-visual-review --image "<mobile-screenshot-path>" --image "<desktop-screenshot-path>" --prompt "Review these rendered screens against the user's brief and active design system. Identify concrete hierarchy, spacing, clipping, legibility, consistency, and domain-fit problems. Preserve what already works."\`
 
-Treat the returned review as visual evidence, apply justified corrections yourself, and rerun the managed audit for any changed entry page. The bridge uses a one-shot vision reviewer; it does not replace you as the editing agent and it does not change the active local LLM runtime. Use it once at the end of a coherent design pass, not after every small edit. If it fails, report the design as structurally audited but not visually reviewed; never invent visual findings.`);
+Treat the returned review as visual evidence, apply justified corrections yourself, and rerun the managed audit for any changed entry page. The bridge uses a one-shot vision reviewer; it does not replace you as the editing agent and it does not change the active local LLM runtime. Use at most one reference-board review before editing and one final render review at the end of a coherent design pass, not after every small edit. If it fails, report the design as structurally audited but not visually reviewed; never invent visual findings.`);
   }
 
   // Pinned LAST so recency bias reinforces the role-marker prohibition.

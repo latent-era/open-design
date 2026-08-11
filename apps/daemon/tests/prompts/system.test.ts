@@ -125,6 +125,7 @@ describe('composeSystemPrompt', () => {
       const prompt = composeSystemPrompt({ agentId });
       expect(prompt).toContain('## Talos local visual-review bridge');
       expect(prompt).toContain('talos-visual-review --image');
+      expect(prompt).toContain('analyse them as one board before editing');
       expect(prompt).toContain('does not change the active local LLM runtime');
     }
 
