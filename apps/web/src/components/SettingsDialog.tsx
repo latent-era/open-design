@@ -1704,11 +1704,13 @@ export function SettingsDialog({
     state: 'switching' | 'error';
   } | null>(null);
   const talosRuntimeSwitching = talosRuntimeTransition?.state === 'switching';
+  const talosRuntimeAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     if (talosRuntimeTransition?.state !== 'error') return;
     const timeout = window.setTimeout(() => setTalosRuntimeTransition(null), 3200);
     return () => window.clearTimeout(timeout);
   }, [talosRuntimeTransition]);
+  useEffect(() => () => talosRuntimeAbortRef.current?.abort(), []);
   const [providerTestState, setProviderTestState] = useState<TestState>({
     status: 'idle',
   });
@@ -4793,11 +4795,18 @@ export function SettingsDialog({
                                         agentId: nextAgentId,
                                         state: 'switching',
                                       });
+                                      talosRuntimeAbortRef.current?.abort();
+                                      const abortController = new AbortController();
+                                      talosRuntimeAbortRef.current = abortController;
                                       void (async () => {
                                         try {
-                                          await activateTalosLocalRuntime(nextAgentId);
+                                          await activateTalosLocalRuntime(nextAgentId, {
+                                            signal: abortController.signal,
+                                          });
+                                          if (abortController.signal.aborted) return;
                                           setTalosRuntimeTransition(null);
                                         } catch {
+                                          if (abortController.signal.aborted) return;
                                           setTalosRuntimeTransition({
                                             agentId: nextAgentId,
                                             state: 'error',

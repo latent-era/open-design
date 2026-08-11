@@ -250,6 +250,7 @@ import {
 import { amrModelLoadingCache } from './runtimes/amr-model-cache.js';
 import {
   activateTalosLocalAgent,
+  hasTalosLocalRuntimeConfig,
   readTalosLocalRuntimeStatus,
   talosRuntimeModeForAgent,
   type TalosLocalAgentId,
@@ -6600,18 +6601,29 @@ export async function startServer({
 
   app.post('/api/talos/local-runtime', async (req, res) => {
     const agentId = req.body?.agentId;
-    if (!talosRuntimeModeForAgent(agentId)) {
+    const mode = talosRuntimeModeForAgent(agentId);
+    if (!mode) {
       res.status(400).json({ error: 'Unsupported Talos local agent' });
       return;
     }
-    try {
-      res.setHeader('Cache-Control', 'no-store');
-      res.json(await activateTalosLocalAgent(agentId as TalosLocalAgentId, process.env));
-    } catch (error) {
-      res.status(503).json({
-        error: error instanceof Error ? error.message : 'Local runtime unavailable',
-      });
+    if (!hasTalosLocalRuntimeConfig(process.env)) {
+      res.status(503).json({ error: 'Talos local runtime control is unavailable' });
+      return;
     }
+    // A cold model load can take minutes — well past this request's
+    // lifetime — so this endpoint only triggers the switch and returns
+    // immediately. The caller confirms completion by polling the GET
+    // endpoint above until the target model's *_active flags flip, instead
+    // of waiting on this response (see activateTalosLocalRuntime in
+    // apps/web/src/providers/daemon.ts).
+    activateTalosLocalAgent(agentId as TalosLocalAgentId, process.env).catch((error) => {
+      console.warn(
+        `[talos-local-runtime] activation request failed for ${agentId}:`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(202).json({ accepted: true, mode });
   });
 
   // Powered-preview isolation info. Reports the daemon's own directly-reachable
