@@ -10,7 +10,10 @@ import {
   verifyTalosLaunchTicket,
   verifyTalosSession,
 } from '../src/integrations/talos-embed-auth.js';
-import { registerTalosEmbedRoutes } from '../src/routes/talos-embed.js';
+import {
+  registerTalosEmbedRoutes,
+  resolveTalosApiSession,
+} from '../src/routes/talos-embed.js';
 
 const secret = 'a-secure-test-secret-that-is-long-enough';
 
@@ -73,7 +76,12 @@ describe('Talos embed routes', () => {
     const app = express();
     app.use(express.json());
     const talos = registerTalosEmbedRoutes(app);
-    app.use('/api', talos.apiSession);
+    app.use('/api', (req, res, next) => {
+      const result = resolveTalosApiSession(talos, req, res);
+      if (result === 'handled') return;
+      if (result === 'authenticated') return next();
+      return res.status(401).json({ error: { code: 'API_TOKEN_REQUIRED' } });
+    });
     app.all('/api/*splat', (req, res) => res.json({ project: res.locals.talosSession?.open_design_project_id ?? null }));
 
     await new Promise<void>((resolve) => {
@@ -113,6 +121,20 @@ describe('Talos embed routes', () => {
     });
     expect(denied.status).toBe(403);
     expect(await denied.json()).toMatchObject({ error: { code: 'TALOS_PROJECT_SCOPE' } });
+  });
+
+  it('passes a verified Talos session through the hosted API bearer gate', async () => {
+    const response = await fetch(`${baseUrl}/api/analytics/config`, {
+      headers: { cookie: sessionCookie },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ project: 'od-project-1' });
+  });
+
+  it('still requires normal API authentication when the Talos cookie is absent', async () => {
+    const response = await fetch(`${baseUrl}/api/analytics/config`);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: { code: 'API_TOKEN_REQUIRED' } });
   });
 
   it('rejects a mismatched project id in request bodies', async () => {

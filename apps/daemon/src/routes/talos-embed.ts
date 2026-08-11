@@ -1,4 +1,4 @@
-import type { Express, RequestHandler } from 'express';
+import type { Express, Request, RequestHandler, Response } from 'express';
 
 import {
   cookieValue,
@@ -26,6 +26,19 @@ function frameAncestorsFromEnv(): string[] {
 export interface TalosEmbedAuth {
   apiSession: RequestHandler;
   configured: boolean;
+}
+
+export type TalosApiSessionResult = 'authenticated' | 'anonymous' | 'handled';
+
+export function resolveTalosApiSession(
+  auth: TalosEmbedAuth,
+  req: Request,
+  res: Response,
+): TalosApiSessionResult {
+  let completed = false;
+  auth.apiSession(req, res, () => { completed = true; });
+  if (!completed || res.headersSent) return 'handled';
+  return res.locals.talosSession ? 'authenticated' : 'anonymous';
 }
 
 export function registerTalosEmbedRoutes(app: Express): TalosEmbedAuth {
