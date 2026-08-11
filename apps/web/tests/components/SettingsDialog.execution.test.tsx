@@ -114,6 +114,7 @@ import { I18nProvider } from '../../src/i18n';
 import { LOCALES } from '../../src/i18n/types';
 import { MAX_MAX_TOKENS, MIN_MAX_TOKENS } from '../../src/state/maxTokens';
 import { workspaceDirectoryFixture } from '../helpers/workspace-context';
+import type { TalosLocalRuntimeStatus } from '../../src/providers/daemon';
 import type {
   AgentInfo,
   AppConfig,
@@ -387,6 +388,7 @@ function renderSettingsDialog(
     welcome?: boolean;
     onSilentUpdatePreferenceChange?: (allowSilentUpdates: boolean) => Promise<void>;
     onResetOnboarding?: (next: AppConfig) => void;
+    talosRuntimeStatus?: TalosLocalRuntimeStatus | null;
   } = {},
 ) {
   const onPersist = vi.fn();
@@ -401,6 +403,7 @@ function renderSettingsDialog(
     <SettingsDialog
       initial={{ ...baseConfig, ...initial }}
       agents={options.agents ?? availableAgents}
+      talosRuntimeStatus={options.talosRuntimeStatus ?? null}
       daemonLive={options.daemonLive ?? true}
       appVersionInfo={options.appVersionInfo ?? null}
       initialSection={options.initialSection ?? 'execution'}
@@ -4273,6 +4276,61 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     await waitFor(() => {
       expect(deepseekCard).not.toBeDisabled();
     });
+  });
+
+  it('shows a "loaded now" badge on whichever Talos card matches live host state, even when a non-Talos agent is selected', () => {
+    renderSettingsDialog(
+      { mode: 'daemon', agentId: 'codex' },
+      {
+        agents: [
+          ...availableAgents, // includes 'codex'
+          talosQwenAgent,
+          talosDeepseekAgent,
+        ],
+        talosRuntimeStatus: {
+          mode: 'coding',
+          qwen_active: false,
+          qwen_status_active: false,
+          ds4_active: true,
+          game_running: false,
+        },
+      },
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Local CLI/i }));
+
+    const deepseekCard = screen
+      .getByTestId('settings-agent-select-talos-deepseek')
+      .closest('.agent-card') as HTMLElement;
+    const qwenCard = screen
+      .getByTestId('settings-agent-select-talos-qwen')
+      .closest('.agent-card') as HTMLElement;
+
+    expect(within(deepseekCard).getByText('Loaded now')).toBeTruthy();
+    expect(within(qwenCard).queryByText('Loaded now')).toBeNull();
+    // Codex, not DeepSeek, is still the selected/active agent — the badge
+    // must not imply a switch happened.
+    expect(deepseekCard.classList.contains('active')).toBe(false);
+  });
+
+  it('does not show the badge for either Talos card when the host reports neither active', () => {
+    renderSettingsDialog(
+      { mode: 'daemon', agentId: 'talos-qwen' },
+      {
+        agents: [talosQwenAgent, talosDeepseekAgent],
+        talosRuntimeStatus: {
+          mode: 'transitioning',
+          qwen_active: false,
+          qwen_status_active: false,
+          ds4_active: false,
+          game_running: false,
+        },
+      },
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Local CLI/i }));
+
+    expect(screen.queryByText('Loaded now')).toBeNull();
   });
 });
 

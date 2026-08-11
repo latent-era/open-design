@@ -55,6 +55,8 @@ import {
   fetchAmrWalletSnapshot,
   fetchVelaLoginStatus,
   formatVelaBalanceUsd,
+  isTalosLocalRuntimeReady,
+  type TalosLocalRuntimeStatus,
   type VelaLoginStatus,
 } from '../providers/daemon';
 import { amrProfileBadgeLabel } from '../runtime/amr-guidance';
@@ -444,6 +446,13 @@ interface Props {
   presentation?: 'modal' | 'page';
   initial: AppConfig;
   agents: AgentInfo[];
+  /**
+   * Live host status for the Talos local agents (Qwen/DeepSeek), fetched
+   * once by App on load. Purely informational — drives the "Loaded now"
+   * badge in the Local CLI agent grid and never changes which agent is
+   * selected. `null` while unknown/unfetched/failed.
+   */
+  talosRuntimeStatus?: TalosLocalRuntimeStatus | null;
   agentsLoading?: boolean;
   daemonLive: boolean;
   appVersionInfo: AppVersionInfo | null;
@@ -1492,6 +1501,7 @@ export function SettingsDialog({
   presentation = 'modal',
   initial,
   agents,
+  talosRuntimeStatus = null,
   agentsLoading = false,
   daemonLive,
   appVersionInfo,
@@ -4613,6 +4623,10 @@ export function SettingsDialog({
                             talosRuntimeTransition?.agentId === a.id
                               ? talosRuntimeTransition
                               : null;
+                          const talosRuntimeLoadedHere =
+                            (a.id === 'talos-qwen' || a.id === 'talos-deepseek') &&
+                            talosRuntimeStatus != null &&
+                            isTalosLocalRuntimeReady(talosRuntimeStatus, a.id);
                           const metaLabel = talosCardTransition
                             ? talosCardTransition.state === 'switching'
                               ? t('common.loading')
@@ -4877,6 +4891,14 @@ export function SettingsDialog({
                                             {metaLabel}
                                           </span>
                                         </div>
+                                      ) : null}
+                                      {talosRuntimeLoadedHere ? (
+                                        <span
+                                          className="agent-model-source-badge live"
+                                          data-testid={`settings-agent-loaded-badge-${a.id}`}
+                                        >
+                                          {t('settings.talosRuntimeLoaded')}
+                                        </span>
                                       ) : null}
                                       {amrCardEmail ? (
                                         <div className="agent-card-amr-email">
