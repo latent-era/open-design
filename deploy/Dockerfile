@@ -103,8 +103,9 @@ COPY --from=build --chown=open-design:open-design /app/assets/community-pets ./a
 COPY --from=build --chown=open-design:open-design /app/plugins/_official ./plugins/_official
 COPY --chown=open-design:open-design deploy/configure-talos-local-agents.mjs /app/deploy/configure-talos-local-agents.mjs
 COPY --chown=open-design:open-design deploy/talos-opencode-runtime.mjs /usr/local/bin/talos-opencode-runtime
+COPY --chown=open-design:open-design deploy/talos-visual-review.mjs /usr/local/bin/talos-visual-review
 
-RUN chmod 0755 /usr/local/bin/talos-opencode-runtime
+RUN chmod 0755 /usr/local/bin/talos-opencode-runtime /usr/local/bin/talos-visual-review
 
 RUN mkdir -p /app/.od && \
     chown -R open-design:open-design /app

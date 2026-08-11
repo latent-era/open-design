@@ -120,6 +120,19 @@ describe('composeSystemPrompt', () => {
     expect(prompt).toContain('Do not self-launch browsers');
   });
 
+  it('delegates pixel review for Talos text-only local profiles', () => {
+    for (const agentId of ['talos-qwen', 'talos-deepseek']) {
+      const prompt = composeSystemPrompt({ agentId });
+      expect(prompt).toContain('## Talos local visual-review bridge');
+      expect(prompt).toContain('talos-visual-review --image');
+      expect(prompt).toContain('does not change the active local LLM runtime');
+    }
+
+    expect(composeSystemPrompt({ agentId: 'codex' })).not.toContain(
+      '## Talos local visual-review bridge',
+    );
+  });
+
   it('does not inject a default task-type form under locale overrides', () => {
     const prompt = composeSystemPrompt({ locale: 'zh-CN' });
 
