@@ -12801,7 +12801,11 @@ export async function startServer({
         markRpcCloseReason('empty_output');
         send('error', createSseErrorPayload(
           'AGENT_EXECUTION_FAILED',
-          'Agent completed without producing any output. The model or provider may have returned an empty response. Check the agent logs for upstream errors, then try re-authenticating the agent, checking quota, or switching models.',
+          // Keep this free of words like "quota"/"limit"/"credit" — this text
+          // feeds run-failure-classification.ts's text-based matchers, and a
+          // generic troubleshooting word here previously self-triggered the
+          // hard-quota classification for every empty-output failure.
+          'Agent completed without producing any output. The model or provider may have returned an empty response. Check the agent logs for upstream errors, then try again.',
           { retryable: true },
         ));
         return finishWithRetryDecision('failed', code, signal);

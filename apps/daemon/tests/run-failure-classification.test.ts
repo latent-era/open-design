@@ -576,6 +576,36 @@ describe('classifyRunFailure', () => {
     });
   });
 
+  it('does not mistake the daemon\'s own empty-output guidance copy for a real quota signal', () => {
+    // Regression: server.ts's empty-output guard message used to tell the
+    // user to try "checking quota, or switching models" as generic
+    // troubleshooting advice. That sentence itself contained the word
+    // "quota", which satisfied the hard-quota text matcher before the
+    // empty-output check ever ran — misclassifying every empty-output
+    // failure, for every agent, as a non-retryable "Quota exhausted" /
+    // switch-to-cloud prompt instead of the correct retryable empty-output
+    // guidance. Mirrors the exact current copy in server.ts's empty-output
+    // guard (search for "may have returned an empty response") — the
+    // daemon's own boilerplate must never be able to trigger a
+    // real-provider-signal classification.
+    const message =
+      'Agent completed without producing any output. The model or provider '
+      + 'may have returned an empty response. Check the agent logs for '
+      + 'upstream errors, then try again.';
+    expect(
+      classify(
+        'AGENT_EXECUTION_FAILED',
+        message,
+        [errorEvent('AGENT_EXECUTION_FAILED', message, true)],
+      ),
+    ).toMatchObject({
+      failure_category: 'empty_output',
+      failure_detail: 'empty_output',
+      retryable: true,
+      user_action: 'retry',
+    });
+  });
+
   it('maps signal exits and stall text to timeout', () => {
     expect(
       classifyRunFailure({
