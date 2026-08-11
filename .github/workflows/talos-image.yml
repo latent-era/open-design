@@ -7,6 +7,8 @@ on:
       - 'apps/daemon/**'
       - 'apps/web/**'
       - 'deploy/Dockerfile'
+      - 'deploy/configure-talos-local-agents.mjs'
+      - 'deploy/talos-opencode-runtime.mjs'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'

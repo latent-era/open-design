@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
-import type { AppConfig, Project } from '../../src/types';
+import type { AgentInfo, AppConfig, Project } from '../../src/types';
 import {
   fetchDaemonConfig,
   fetchComposioConfigFromDaemon,
@@ -587,6 +587,49 @@ describe('App connectors settings flows', () => {
         kind: 'project',
         projectId: project.id,
       }));
+    } finally {
+      window.history.replaceState({}, '', '/');
+      useRouteMock.mockReturnValue(homeRouteMock);
+    }
+  });
+
+  it('auto-selects an available agent in a Talos embed without onboarding', async () => {
+    const codex: AgentInfo = {
+      id: 'codex',
+      name: 'Codex CLI',
+      bin: 'codex',
+      available: true,
+      version: '0.147.0',
+      models: [{ id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' }],
+    };
+    window.history.replaceState({}, '', '/projects/proj-1?talos=1');
+    useRouteMock.mockReturnValue({
+      kind: 'project',
+      projectId: 'proj-1',
+      conversationId: null,
+      fileName: null,
+    } as never);
+    mockedLoadConfig.mockReturnValue({ ...baseConfig, onboardingCompleted: false });
+    mockedFetchDaemonConfig.mockResolvedValue({ onboardingCompleted: false, agentId: null });
+    mockedFetchAgentsStream.mockResolvedValue([codex]);
+    mockedListProjects.mockResolvedValue([{
+      id: 'proj-1',
+      name: 'Talos project',
+      skillId: null,
+      designSystemId: null,
+      createdAt: 1778244000000,
+      updatedAt: 1778244000000,
+      metadata: { kind: 'prototype' },
+    }]);
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(mockedSaveConfig).toHaveBeenCalledWith(
+          expect.objectContaining({ agentId: 'codex' }),
+        );
+      });
     } finally {
       window.history.replaceState({}, '', '/');
       useRouteMock.mockReturnValue(homeRouteMock);

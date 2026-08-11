@@ -1486,7 +1486,7 @@ export function EntryShell({
 
   const homeExecutionSwitcher = (
     <InlineModelSwitcher
-      compact
+      compact={agents.filter((agent) => agent.available && agent.id !== 'amr').length <= 1}
       config={config}
       agents={agents}
       providerModelsCache={activeProviderModelsCache}

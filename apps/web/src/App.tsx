@@ -2225,7 +2225,7 @@ function AppInner() {
   // backfills an empty slot for returning users.
   useEffect(() => {
     if (!daemonConfigLoaded || agentsLoading) return;
-    if (config.onboardingCompleted !== true) return;
+    if (config.onboardingCompleted !== true && !talosEmbedMode) return;
     if (config.agentId) return;
     const firstAvailable = agents.find((a) => a.available);
     if (!firstAvailable) return;
@@ -2242,6 +2242,7 @@ function AppInner() {
     agents,
     config.agentId,
     config.onboardingCompleted,
+    talosEmbedMode,
   ]);
 
   // Auto-pick the default design system the same way — only after daemon
