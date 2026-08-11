@@ -80,6 +80,26 @@ const API_MODE_AGENT_IDS = new Set([
   'bedrock-api',
 ]);
 
+export interface TalosLocalRuntimeStatus {
+  mode: 'chat' | 'coding';
+  qwen_active: boolean;
+  qwen_status_active: boolean;
+  ds4_active: boolean;
+  game_running: boolean;
+}
+
+export async function activateTalosLocalRuntime(
+  agentId: 'talos-qwen' | 'talos-deepseek',
+): Promise<TalosLocalRuntimeStatus> {
+  const response = await fetch('/api/talos/local-runtime', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agentId }),
+  });
+  if (!response.ok) throw new Error('Unable to activate local model');
+  return await response.json() as TalosLocalRuntimeStatus;
+}
+
 export function latestUserPromptFromHistory(history: ChatMessage[]): string {
   for (let i = history.length - 1; i >= 0; i -= 1) {
     const message = history[i];

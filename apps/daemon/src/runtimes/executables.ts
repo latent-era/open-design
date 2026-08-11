@@ -357,7 +357,13 @@ export function inspectAgentExecutableResolution(
   ];
   let pathResolvedPath: string | null = null;
   for (const bin of candidates) {
-    const resolved = resolveOnPath(bin);
+    // Local agent profiles may point directly at a wrapper executable. Treat
+    // an absolute executable as authoritative before searching PATH; joining
+    // it to each PATH directory makes the wrapper impossible to resolve and
+    // can silently select an inherited fallback binary instead.
+    const resolved = (
+      path.isAbsolute(bin) ? executableFilePath(bin) : null
+    ) ?? resolveOnPath(bin);
     if (resolved) {
       pathResolvedPath = resolved;
       break;

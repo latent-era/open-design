@@ -88,12 +88,36 @@ const codexAgent: AgentInfo = {
   models: [{ id: 'default', label: 'Default' }],
 };
 
+const qwenAgent: AgentInfo = {
+  id: 'talos-qwen',
+  name: 'Qwen Local',
+  bin: '/usr/local/bin/talos-opencode-runtime',
+  available: true,
+  version: '1.0.0',
+  models: [{ id: 'qwen_local/qwen3.6-35b', label: 'Qwen 3.6 35B' }],
+};
+
+const deepSeekAgent: AgentInfo = {
+  id: 'talos-deepseek',
+  name: 'DeepSeek Local',
+  bin: '/usr/local/bin/talos-opencode-runtime',
+  available: true,
+  version: '1.0.0',
+  models: [
+    {
+      id: 'deepseek_local/deepseek-v4-flash-0731-q2',
+      label: 'DeepSeek V4 Flash 0731 Q2',
+    },
+  ],
+};
+
 function renderSwitcher(
   config: Partial<AppConfig> = {},
   agents: AgentInfo[] = [amrAgent],
   providerModelsCache: Record<string, ProviderModelOption[]> = {},
   options: { compact?: boolean } = {},
 ) {
+  const onAgentChange = vi.fn();
   const onAgentModelChange = vi.fn();
   const view = render(
     <InlineModelSwitcher
@@ -103,14 +127,14 @@ function renderSwitcher(
       compact={options.compact}
       daemonLive={true}
       onModeChange={vi.fn()}
-      onAgentChange={vi.fn()}
+      onAgentChange={onAgentChange}
       onAgentModelChange={onAgentModelChange}
       onApiProtocolChange={vi.fn()}
       onApiModelChange={vi.fn()}
       onOpenSettings={vi.fn()}
     />,
   );
-  return { ...view, onAgentModelChange };
+  return { ...view, onAgentChange, onAgentModelChange };
 }
 
 // recvqfYKutwWlQ: the AMR upgrade entry point must only render for a caller who
@@ -232,6 +256,80 @@ describe('InlineModelSwitcher AMR row', () => {
       // jsdom normally exposes localStorage; keep cleanup tolerant.
     }
     resetWorkspaceContextCache();
+  });
+
+  it('waits for the selected Talos runtime to become ready', async () => {
+    let finishRuntimeSwitch: ((response: Response) => void) | undefined;
+    const runtimeResponse = new Promise<Response>((resolve) => {
+      finishRuntimeSwitch = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/talos/local-runtime' && init?.method === 'POST') {
+        return await runtimeResponse;
+      }
+      if (url.includes('/api/workspace/')) {
+        return new Response(JSON.stringify({ context: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { onAgentChange } = renderSwitcher(
+      {
+        agentId: 'talos-qwen',
+        agentModels: {
+          'talos-qwen': { model: 'qwen_local/qwen3.6-35b' },
+          'talos-deepseek': {
+            model: 'deepseek_local/deepseek-v4-flash-0731-q2',
+          },
+        },
+      },
+      [qwenAgent, deepSeekAgent],
+    );
+
+    const chip = screen.getByTestId('inline-model-switcher-chip');
+    fireEvent.click(chip);
+    const popover = screen.getByTestId('inline-model-switcher-popover');
+    fireEvent.click(
+      within(popover).getByTestId('inline-model-switcher-agent-talos-deepseek'),
+    );
+
+    expect(onAgentChange).toHaveBeenCalledWith('talos-deepseek');
+    expect(chip).toBeDisabled();
+    expect(chip).toHaveAttribute('aria-busy', 'true');
+    expect(
+      within(popover).getByTestId('inline-model-switcher-runtime-status'),
+    ).toHaveTextContent(/loading.*deepseek/i);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/talos/local-runtime',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ agentId: 'talos-deepseek' }),
+      }),
+    );
+
+    finishRuntimeSwitch?.(
+      new Response(
+        JSON.stringify({
+          mode: 'coding',
+          qwen_active: false,
+          qwen_status_active: false,
+          ds4_active: true,
+          game_running: false,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('inline-model-switcher-popover')).toBeNull();
+      expect(chip).not.toBeDisabled();
+      expect(chip).not.toHaveAttribute('aria-busy');
+    });
   });
 
   it('shows the AMR reminder dot once when another CLI is selected', async () => {

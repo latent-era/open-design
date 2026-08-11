@@ -55,6 +55,7 @@ import { KNOWN_PROVIDERS } from '../state/config';
 import { fetchProviderModels } from '../providers/provider-models';
 import { SUGGESTED_MODELS_BY_PROTOCOL } from '../state/apiProtocols';
 import {
+  activateTalosLocalRuntime,
   canUpgradeVelaPlan,
   cancelVelaLogin,
   fetchAmrWalletSnapshot,
@@ -220,9 +221,20 @@ export function InlineModelSwitcher({
   } = useWorkspaceContext();
   const workspaceBillingResponse = useWorkspaceBillingResponse();
   const [open, setOpen] = useState(false);
+  const [talosRuntimeTransition, setTalosRuntimeTransition] = useState<{
+    agentId: 'talos-qwen' | 'talos-deepseek';
+    state: 'switching' | 'ready' | 'error';
+  } | null>(null);
+  const talosRuntimeSwitching = talosRuntimeTransition?.state === 'switching';
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const campaignBenefitTrackedForOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (talosRuntimeTransition?.state !== 'ready') return;
+    const timeout = window.setTimeout(() => setTalosRuntimeTransition(null), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [talosRuntimeTransition]);
   // Viewport clamp for the popover (issue #99): the anchor chip can sit
   // anywhere on screen (home hero mid-page, chat composer at the bottom), so
   // a fixed downward placement runs past the screen edge once the model list
@@ -544,7 +556,23 @@ export function InlineModelSwitcher({
         element: 'agent_card',
         cli_provider_id: agentIdToTracking(agentId),
       });
+      const previousAgentId = config.agentId;
       onAgentChange?.(agentId);
+      if (
+        agentId !== previousAgentId &&
+        (agentId === 'talos-qwen' || agentId === 'talos-deepseek')
+      ) {
+        setTalosRuntimeTransition({ agentId, state: 'switching' });
+        try {
+          await activateTalosLocalRuntime(agentId);
+          setTalosRuntimeTransition({ agentId, state: 'ready' });
+          setOpen(false);
+        } catch {
+          setTalosRuntimeTransition({ agentId, state: 'error' });
+          if (previousAgentId) onAgentChange?.(previousAgentId);
+        }
+        return;
+      }
       if (agentId !== 'amr') return;
       if (amrLoginPending) {
         await handleAmrCancelLogin();
@@ -565,6 +593,7 @@ export function InlineModelSwitcher({
       analytics.track,
       handleAmrCancelLogin,
       handleAmrSignIn,
+      config.agentId,
       onAgentChange,
       refreshAmrStatus,
     ],
@@ -1113,10 +1142,13 @@ export function InlineModelSwitcher({
         className={
           'inline-switcher__chip od-tooltip' +
           (compact ? ' inline-switcher__chip--icon' : '') +
-          (showAmrReminder ? ' has-amr-reminder' : '')
+          (showAmrReminder ? ' has-amr-reminder' : '') +
+          (talosRuntimeSwitching ? ' is-switching' : '')
         }
         data-testid="inline-model-switcher-chip"
         onClick={handleChipClick}
+        disabled={talosRuntimeSwitching}
+        aria-busy={talosRuntimeSwitching ? 'true' : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={
@@ -1156,11 +1188,17 @@ export function InlineModelSwitcher({
                 leads the model name so the dot reads as part of the model
                 label rather than trailing the logo. */}
             <span className="inline-switcher__chip-divider" aria-hidden="true" />
-            <span
-              className="inline-switcher__chip-conn"
-              data-connected={chipConnected ? 'true' : 'false'}
-              aria-hidden="true"
-            />
+            {talosRuntimeSwitching ? (
+              <span className="inline-switcher__runtime-spinner" aria-hidden="true">
+                <Icon name="spinner" size={14} />
+              </span>
+            ) : (
+              <span
+                className="inline-switcher__chip-conn"
+                data-connected={chipConnected ? 'true' : 'false'}
+                aria-hidden="true"
+              />
+            )}
             <span className="inline-switcher__chip-model-name">{chipModel}</span>
             {campaignVisibility.visible && isDeepSeekV4FlashCampaignModel(currentModelId) ? (
               <span
@@ -1185,6 +1223,11 @@ export function InlineModelSwitcher({
               )}
             </span>
             <span className="inline-switcher__chip-text">
+              {talosRuntimeSwitching ? (
+                <span className="inline-switcher__runtime-spinner" aria-hidden="true">
+                  <Icon name="spinner" size={14} />
+                </span>
+              ) : null}
               <span className="inline-switcher__chip-mode">{chipMode}</span>
               <span className="inline-switcher__chip-sep" aria-hidden="true">
                 ·
@@ -1526,6 +1569,7 @@ export function InlineModelSwitcher({
                             }
                             data-testid={`inline-model-switcher-agent-${a.id}`}
                             onClick={() => void handleAgentButtonClick(a.id)}
+                            disabled={talosRuntimeSwitching}
                             title={
                               a.id === 'amr' && amrLoginPending
                                 ? amrPendingHoverLabel
@@ -1551,6 +1595,23 @@ export function InlineModelSwitcher({
                     })}
                   </div>
                 )}
+
+                {talosRuntimeTransition ? (
+                  <div
+                    className={
+                      'inline-switcher__warn' +
+                      (talosRuntimeTransition.state === 'error' ? ' is-error' : '')
+                    }
+                    role="status"
+                    data-testid="inline-model-switcher-runtime-status"
+                  >
+                    {talosRuntimeTransition.state === 'switching'
+                      ? `${t('common.loading')} ${talosRuntimeTransition.agentId === 'talos-deepseek' ? 'DeepSeek' : 'Qwen'}`
+                      : talosRuntimeTransition.state === 'ready'
+                        ? `${talosRuntimeTransition.agentId === 'talos-deepseek' ? 'DeepSeek' : 'Qwen'} ready`
+                        : 'Unable to load the selected local model. Previous model restored.'}
+                  </div>
+                ) : null}
 
               {amrInstalled ? (
                 <div

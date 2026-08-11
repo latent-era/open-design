@@ -249,6 +249,12 @@ import {
 } from './integrations/vela-errors.js';
 import { amrModelLoadingCache } from './runtimes/amr-model-cache.js';
 import {
+  activateTalosLocalAgent,
+  readTalosLocalRuntimeStatus,
+  talosRuntimeModeForAgent,
+  type TalosLocalAgentId,
+} from './talos-local-runtime.js';
+import {
   fetchVelaPresetModels,
   fetchVelaRemoteModelsWithRetry,
 } from './runtimes/defs/amr.js';
@@ -6579,6 +6585,33 @@ export async function startServer({
   app.get('/api/version', async (_req, res) => {
     const version = await readCurrentAppVersionInfo();
     res.json({ version });
+  });
+
+  app.get('/api/talos/local-runtime', async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await readTalosLocalRuntimeStatus(process.env));
+    } catch (error) {
+      res.status(503).json({
+        error: error instanceof Error ? error.message : 'Local runtime unavailable',
+      });
+    }
+  });
+
+  app.post('/api/talos/local-runtime', async (req, res) => {
+    const agentId = req.body?.agentId;
+    if (!talosRuntimeModeForAgent(agentId)) {
+      res.status(400).json({ error: 'Unsupported Talos local agent' });
+      return;
+    }
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await activateTalosLocalAgent(agentId as TalosLocalAgentId, process.env));
+    } catch (error) {
+      res.status(503).json({
+        error: error instanceof Error ? error.message : 'Local runtime unavailable',
+      });
+    }
   });
 
   // Powered-preview isolation info. Reports the daemon's own directly-reachable
