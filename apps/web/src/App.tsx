@@ -4458,8 +4458,15 @@ function AppInner() {
     setSettingsWelcome(false);
     setSettingsInitialSection(section);
     setSettingsHighlight(opts?.highlight ?? null);
+    // Talos embeds are intentionally pinned to their project route. Opening
+    // Settings as a page would be rejected by that route guard, so keep the
+    // project mounted and use the existing modal presentation instead.
+    if (talosEmbedMode) {
+      setSettingsOpen(true);
+      return;
+    }
     navigate({ kind: 'home', view: 'settings' });
-  }, [identityScopeKey]);
+  }, [identityScopeKey, talosEmbedMode]);
 
   // Entry point from the failed-run AMR nudge: open Settings on the execution
   // section and flag the AMR agent card for a one-shot scroll-into-view +

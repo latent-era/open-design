@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
-import type { AppConfig } from '../../src/types';
+import type { AppConfig, Project } from '../../src/types';
 import {
   fetchDaemonConfig,
   fetchComposioConfigFromDaemon,
@@ -95,7 +95,18 @@ vi.mock('../../src/components/EntryView', () => ({
 }));
 
 vi.mock('../../src/components/ProjectView', () => ({
-  ProjectView: () => <div>Project view</div>,
+  ProjectView: ({
+    onOpenSettings,
+  }: {
+    onOpenSettings: () => void;
+  }) => (
+    <div>
+      Project view
+      <button type="button" onClick={() => onOpenSettings()}>
+        Open project execution settings
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../../src/components/pet/PetOverlay', () => ({
@@ -543,6 +554,43 @@ describe('App connectors settings flows', () => {
       expect(screen.getByRole('dialog', { name: 'Settings dialog' })).toBeTruthy();
     });
     expect(container.querySelector('.privacy-consent-banner')).toBeTruthy();
+  });
+
+  it('opens execution settings in place for a Talos-embedded project', async () => {
+    const project: Project = {
+      id: 'proj-1',
+      name: 'Talos project',
+      skillId: null,
+      designSystemId: null,
+      createdAt: 1778244000000,
+      updatedAt: 1778244000000,
+      metadata: { kind: 'prototype' },
+    };
+    window.history.replaceState({}, '', '/projects/proj-1?talos=1');
+    useRouteMock.mockReturnValue({
+      kind: 'project',
+      projectId: project.id,
+      conversationId: null,
+      fileName: null,
+    } as never);
+    mockedListProjects.mockResolvedValue([project]);
+
+    try {
+      render(<App />);
+
+      fireEvent.click(await screen.findByRole('button', {
+        name: 'Open project execution settings',
+      }));
+
+      expect(await screen.findByRole('dialog', { name: 'Settings dialog' })).toBeTruthy();
+      expect(useRouteMock()).toEqual(expect.objectContaining({
+        kind: 'project',
+        projectId: project.id,
+      }));
+    } finally {
+      window.history.replaceState({}, '', '/');
+      useRouteMock.mockReturnValue(homeRouteMock);
+    }
   });
 
   it('preserves an open settings draft when the first-run banner share choice is clicked before autosave', async () => {
