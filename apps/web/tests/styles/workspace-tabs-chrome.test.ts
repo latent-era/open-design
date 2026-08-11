@@ -28,7 +28,10 @@ function ruleValue(block: string, property: string): string {
 
 describe('workspace tabs chrome styles', () => {
   it('gives the Talos embedded editor the full viewport when its tab bar is absent', () => {
-    const embedShell = cssDeclarations(shellCss, '.workspace-shell--talos-embed');
+    const embedShell = cssDeclarations(
+      shellCss,
+      '.workspace-shell.workspace-shell--talos-embed',
+    );
 
     expect(ruleValue(embedShell, 'grid-template-rows')).toBe('minmax(0, 1fr)');
   });

@@ -37,7 +37,7 @@
   backdrop-filter: none;
   overflow: hidden;
 }
-.workspace-shell--talos-embed {
+.workspace-shell.workspace-shell--talos-embed {
   /* Talos supplies its own outer chrome, so WorkspaceTabsBar is not mounted.
    * Collapse the reserved tab row or the editor body is auto-placed into that
    * 44/52px track and the preview iframe resolves to zero height. */
