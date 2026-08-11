@@ -20,6 +20,7 @@ import { SIDECAR_ENV, SIDECAR_MESSAGES } from '@open-design/sidecar-proto';
 import { EXPORT_FORMATS, EXPORT_IMAGE_FORMATS } from '@open-design/contracts';
 import { buildExportCliRequestBody, buildExportCliResultEnvelope, resolveExportCliDeckMode } from './export-cli-request.js';
 import { exportRoutePath } from './export-cli-routing.js';
+import { runPrototypeAudit } from './prototype-qa.js';
 import {
   AGENT_SLUGS,
   isAgentSlug,
@@ -246,6 +247,10 @@ const PROJECT_RESOURCE_STRING_FLAGS = new Set([
   'workspace-member',
 ]);
 const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
+const PREVIEW_STRING_FLAGS = new Set([
+  'project', 'file', 'output-dir', 'browser-ws-url', 'preview-origin',
+]);
+const PREVIEW_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 const WORKSPACE_STRING_FLAGS = new Set([
   'daemon-url', 'workspace', 'view', 'visibility', 'owner', 'project',
   'member', 'role', 'email', 'app-user', 'lifecycle-state',
@@ -403,6 +408,7 @@ const SUBCOMMAND_MAP = {
   craft: runCraft,
   diagnostics: runDiagnostics,
   export: runExport,
+  preview: runPreview,
   status: runStatus,
   version: runVersion,
   'whats-new': runWhatsNew,
@@ -411,6 +417,78 @@ const SUBCOMMAND_MAP = {
   library: runLibrary,
   figma: runFigma,
 };
+
+function printPreviewHelp() {
+  console.log(`Usage:
+  od preview audit <projectId> <file> [options]
+
+Render and audit an HTML prototype at mobile (390x844) and desktop
+(1280x900) viewports through Open Design's managed Browserless backend.
+The command saves screenshots and a revision-bound QA receipt, and exits
+non-zero when it detects overflow, failed assets, console errors, exposed icon
+ligatures, undersized controls, or broken internal links.
+
+Options:
+  --project <id>          Project id (or OD_PROJECT_ID)
+  --file <path>           Project-relative HTML file
+  --output-dir <path>     Screenshot directory (default: qa)
+  --browser-ws-url <url>  Override OD_BROWSERLESS_WS_URL
+  --preview-origin <url>  Override OD_BROWSERLESS_PREVIEW_ORIGIN
+  --json                  Print the full machine-readable receipt`);
+}
+
+async function runPreview(args) {
+  if (args.length === 0 || args[0] === 'help' || args.includes('--help') || args.includes('-h')) {
+    printPreviewHelp();
+    process.exit(args.length === 0 ? 2 : 0);
+  }
+  if (args[0] !== 'audit') {
+    console.error(`Unknown preview command: ${args[0]}`);
+    printPreviewHelp();
+    process.exit(2);
+  }
+  let flags;
+  try {
+    flags = parseFlags(args.slice(1), { string: PREVIEW_STRING_FLAGS, boolean: PREVIEW_BOOLEAN_FLAGS });
+  } catch (err) {
+    console.error(err.message);
+    process.exit(2);
+  }
+  const positional = positionalArgs(args.slice(1), PREVIEW_STRING_FLAGS);
+  const projectId = flags.project || positional[0] || process.env.OD_PROJECT_ID;
+  const file = flags.file || positional[1];
+  if (!projectId || !file) {
+    printPreviewHelp();
+    process.exit(2);
+  }
+  let receipt;
+  try {
+    receipt = await runPrototypeAudit({
+      projectRoot: process.cwd(),
+      projectId,
+      relpath: file,
+      ...(flags['output-dir'] ? { outputDir: flags['output-dir'] } : {}),
+      ...(flags['browser-ws-url'] ? { browserWsUrl: flags['browser-ws-url'] } : {}),
+      ...(flags['preview-origin'] ? { previewOrigin: flags['preview-origin'] } : {}),
+    });
+  } catch (err) {
+    console.error(`prototype audit could not run: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 3;
+    return;
+  }
+  if (flags.json) {
+    process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
+  } else {
+    for (const result of receipt.viewports) {
+      console.log(`${result.viewport.name}: ${result.issues.length === 0 ? 'PASS' : `FAIL (${result.issues.length})`} — ${result.screenshot}`);
+      for (const issue of result.issues) {
+        console.log(`  [${issue.type}] ${issue.selector ? `${issue.selector}: ` : ''}${issue.message}${issue.url ? ` — ${issue.url}` : ''}`);
+      }
+    }
+    console.log(receipt.passed ? 'prototype audit passed' : 'prototype audit failed');
+  }
+  if (!receipt.passed) process.exitCode = 1;
+}
 
 const EXPORT_STRING_FLAGS = new Set([
   'daemon-url', 'project', 'format', 'out', 'output', 'image-format', 'title', 'file',

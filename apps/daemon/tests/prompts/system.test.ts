@@ -109,19 +109,15 @@ describe('composeSystemPrompt', () => {
     expect(prompt).toContain('show progress through the Todo card');
   });
 
-  it('injects the converged verification policy (no mid-build screenshot looping)', () => {
+  it('requires one managed mobile and desktop prototype audit at completion', () => {
     const prompt = composeSystemPrompt({});
 
-    // Verification must read as an end-of-turn, single-pass step.
     expect(prompt).toContain('## Verification — converge at the end, in one pass');
-    // The hard cap on rendered visual checks — the lever against codex's
-    // self-initiated 6-12x screenshot retry chains that balloon input tokens.
-    expect(prompt).toContain('One render check is the budget');
-    expect(prompt).toContain('Do not loop');
-    // Safety valve: visual verification is converged, NOT removed.
-    expect(prompt).toContain('these justify ONE rendered look');
-    // Route to the official wrapper, not a self-launched browser.
-    expect(prompt).toContain('Do NOT launch your own browser to do this');
+    expect(prompt).toContain('preview audit "$OD_PROJECT_ID" <file>');
+    expect(prompt).toContain('390x844 mobile and 1280x900 desktop');
+    expect(prompt).toContain('A static review never substitutes for this audit');
+    expect(prompt).toContain('Never use a remote ligature icon font');
+    expect(prompt).toContain('Do not self-launch browsers');
   });
 
   it('does not inject a default task-type form under locale overrides', () => {

@@ -90,13 +90,22 @@ export function buildBrowserUseRunState({
   requested,
   agentId,
   diagnostics,
+  backendAvailable = Boolean(process.env.OD_BROWSERLESS_WS_URL),
 }: {
   requested: boolean;
   agentId: string | null | undefined;
   diagnostics?: BrowserUseDiscoveryFacts;
+  backendAvailable?: boolean;
 }): BrowserUseRunState | null {
   if (!requested || agentId !== 'codex') return null;
   const facts = diagnostics ?? collectBrowserUseDiscoveryFacts();
+  if (backendAvailable) {
+    return {
+      requested: true,
+      available: true,
+      diagnostics: facts,
+    };
+  }
   return {
     requested: true,
     available: false,

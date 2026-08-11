@@ -85,6 +85,7 @@ import {
   isBrowserUseRequested,
   renderBrowserUseUnavailablePrompt,
 } from './browser/index.js';
+import { listProjectHtmlFiles, validatePrototypeQaReceipts } from './prototype-qa.js';
 import {
   UPLOAD_DIR,
   composeLiveInstructionPrompt,
@@ -9026,7 +9027,7 @@ export async function startServer({
     if (browserUseRunState) {
       run.browserUse = browserUseRunState;
       design.runs.emit(run, 'diagnostic', {
-        type: 'browser_use_unavailable',
+        type: browserUseRunState.available ? 'browser_use_available' : 'browser_use_unavailable',
         ...browserUseRunState,
       });
     }
@@ -9518,6 +9519,34 @@ export async function startServer({
           run.artifactVersionId = selected?.version.id;
         }
       }
+    };
+    const prototypeQaFailuresBeforeSuccess = () => {
+      if (process.env.OD_PROTOTYPE_QA_REQUIRED !== '1' || executionProfile !== 'filesystem') return [];
+      const outcome = resolveRunArtifactOutcomeBeforeFinish();
+      if (!outcome?.diff || !outcome.projectRoot) return [];
+      const changedHtml = outcome.diff.contentTouchedPaths
+        .filter((filePath) => /\.html?$/iu.test(filePath))
+        .map((filePath) => path.relative(outcome.projectRoot, filePath).replaceAll('\\', '/'));
+      const htmlFiles = outcome.diff.renderDependencyTouched > 0
+        ? listProjectHtmlFiles(outcome.projectRoot)
+        : changedHtml;
+      if (htmlFiles.length === 0) return [];
+      const changedPaths = [
+        ...outcome.diff.contentTouchedPaths,
+        ...outcome.diff.renderDependencyTouchedPaths,
+      ];
+      const modifiedAfterMs = changedPaths.reduce((latest, filePath) => {
+        try {
+          return Math.max(latest, fs.statSync(filePath).mtimeMs);
+        } catch {
+          return latest;
+        }
+      }, 0);
+      return validatePrototypeQaReceipts({
+        projectRoot: outcome.projectRoot,
+        htmlFiles: [...new Set(htmlFiles)],
+        ...(modifiedAfterMs > 0 ? { modifiedAfterMs } : {}),
+      });
     };
     // Chain onto the run service's terminal chokepoint so startup rejection,
     // direct cancellation, shutdown, and every explicit finish path all consume
@@ -13136,6 +13165,20 @@ export async function startServer({
         publishNativeSessionRecoveryMetadata();
       }
       if (status === 'succeeded') {
+        const qaFailures = prototypeQaFailuresBeforeSuccess();
+        if (qaFailures.length > 0) {
+          const summary = qaFailures
+            .slice(0, 8)
+            .map(({ file, reason }) => `${file} (${reason})`)
+            .join(', ');
+          send('error', createSseErrorPayload(
+            'PROTOTYPE_QA_REQUIRED',
+            `Visual prototype verification is incomplete: ${summary}. Run the managed preview audit for each affected HTML page and fix every reported issue before completing the turn.`,
+            { retryable: true, details: { failures: qaFailures } },
+          ));
+          design.runs.finish(run, 'failed', 1, signal);
+          return;
+        }
         try {
           await snapshotAiHtmlVersionsBeforeSuccess();
         } catch (err) {
