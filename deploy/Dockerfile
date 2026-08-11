@@ -81,7 +81,7 @@ COPY plugins/_official ./plugins/_official
 FROM ${RUNTIME_IMAGE}
 
 RUN apk add --no-cache tini poppler-utils bash git && \
-    npm install --global @openai/codex@0.147.0 && \
+    npm install --global @openai/codex@0.147.0 opencode-ai@1.18.16 && \
     npm cache clean --force && \
     addgroup -S -g 1001 open-design && \
     adduser -S -D -H -u 1001 -G open-design open-design
@@ -101,6 +101,10 @@ COPY --from=build --chown=open-design:open-design /app/assets/community-pets ./a
 # it on startup so the container ships with first-party atoms reachable
 # via the same registry path third-party plugins use.
 COPY --from=build --chown=open-design:open-design /app/plugins/_official ./plugins/_official
+COPY --chown=open-design:open-design deploy/configure-talos-local-agents.mjs /app/deploy/configure-talos-local-agents.mjs
+COPY --chown=open-design:open-design deploy/talos-opencode-runtime.mjs /usr/local/bin/talos-opencode-runtime
+
+RUN chmod 0755 /usr/local/bin/talos-opencode-runtime
 
 RUN mkdir -p /app/.od && \
     chown -R open-design:open-design /app

@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { load } from 'cheerio';
 import puppeteer, { type ConsoleMessage, type HTTPRequest, type Page } from 'puppeteer-core';
 
-export const PROTOTYPE_QA_RECEIPT_VERSION = 1;
+export const PROTOTYPE_QA_RECEIPT_VERSION = 2;
 
 export interface PrototypeQaViewport {
   name: 'mobile' | 'desktop';
@@ -46,8 +47,33 @@ function normalizeRelpath(value: string): string {
   return value.replaceAll('\\', '/').replace(/^\.\//, '');
 }
 
-function sha256File(filePath: string): string {
-  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+function localDependencyPaths(projectRoot: string, relpath: string): string[] {
+  const filePath = safeProjectFile(projectRoot, relpath);
+  const $ = load(fs.readFileSync(filePath, 'utf8'));
+  const dependencies = new Set<string>();
+  $('link[rel~="stylesheet"][href], script[src], img[src], source[src], video[poster]').each((_index, element) => {
+    const raw = $(element).attr('href') ?? $(element).attr('src') ?? $(element).attr('poster');
+    if (!raw || /^(?:[a-z]+:|\/\/|#)/iu.test(raw)) return;
+    const withoutQuery = raw.split(/[?#]/u, 1)[0];
+    if (!withoutQuery) return;
+    const dependency = normalizeRelpath(path.join(path.dirname(relpath), withoutQuery));
+    safeProjectFile(projectRoot, dependency);
+    dependencies.add(dependency);
+  });
+  return [...dependencies].sort();
+}
+
+export function prototypeSourceSha256(projectRoot: string, relpath: string): string {
+  const normalized = normalizeRelpath(relpath);
+  const hash = createHash('sha256');
+  for (const dependency of [normalized, ...localDependencyPaths(projectRoot, normalized)]) {
+    const dependencyPath = safeProjectFile(projectRoot, dependency);
+    hash.update(`${dependency}\0`);
+    if (fs.existsSync(dependencyPath)) hash.update(fs.readFileSync(dependencyPath));
+    else hash.update('<missing>');
+    hash.update('\0');
+  }
+  return hash.digest('hex');
 }
 
 function receiptStem(relpath: string): string {
@@ -138,6 +164,7 @@ async function inspectPage(page: Page): Promise<PrototypeQaIssue[]> {
 
     for (const element of Array.from(document.querySelectorAll('body *')) as any[]) {
       if (!visible(element)) continue;
+      if (element.hasAttribute('data-qa-overflow-ignore')) continue;
       const html = element;
       const rect = html.getBoundingClientRect();
       const style = getComputedStyle(html);
@@ -151,6 +178,25 @@ async function inspectPage(page: Page): Promise<PrototypeQaIssue[]> {
           selector: selectorFor(element),
         });
         if (issues.filter((issue) => issue.type === 'overflow').length >= 12) break;
+      }
+
+      const directText = Array.from(html.childNodes)
+        .filter((node: any) => node.nodeType === 3)
+        .map((node: any) => node.textContent || '')
+        .join('')
+        .trim();
+      const clipsText = directText.length > 0
+        && style.textOverflow !== 'ellipsis'
+        && (
+          ((style.overflowX === 'hidden' || style.overflowX === 'clip') && html.scrollWidth > html.clientWidth + 1)
+          || ((style.overflowY === 'hidden' || style.overflowY === 'clip') && html.scrollHeight > html.clientHeight + 1)
+        );
+      if (clipsText) {
+        issues.push({
+          type: 'overflow',
+          message: `text content is clipped (${html.scrollWidth}x${html.scrollHeight} inside ${html.clientWidth}x${html.clientHeight})`,
+          selector: selectorFor(element),
+        });
       }
     }
 
@@ -258,7 +304,7 @@ export async function runPrototypeAudit(input: {
     version: PROTOTYPE_QA_RECEIPT_VERSION,
     projectId: input.projectId,
     file: relpath,
-    fileSha256: sha256File(filePath),
+    fileSha256: prototypeSourceSha256(projectRoot, relpath),
     auditedAt: new Date().toISOString(),
     passed: results.every((result) => result.issues.length === 0),
     viewports: results,
@@ -299,7 +345,7 @@ export function validatePrototypeQaReceipts(input: {
   const failures: PrototypeQaReceiptFailure[] = [];
   for (const relpathRaw of input.htmlFiles) {
     const relpath = normalizeRelpath(relpathRaw);
-    const filePath = safeProjectFile(input.projectRoot, relpath);
+    safeProjectFile(input.projectRoot, relpath);
     const receiptPath = prototypeQaReceiptPath(input.projectRoot, relpath);
     if (!fs.existsSync(receiptPath)) {
       failures.push({ file: relpath, reason: 'missing' });
@@ -312,7 +358,7 @@ export function validatePrototypeQaReceipts(input: {
       failures.push({ file: relpath, reason: 'invalid' });
       continue;
     }
-    if (receipt.version !== PROTOTYPE_QA_RECEIPT_VERSION || receipt.file !== relpath || receipt.fileSha256 !== sha256File(filePath)) {
+    if (receipt.version !== PROTOTYPE_QA_RECEIPT_VERSION || receipt.file !== relpath || receipt.fileSha256 !== prototypeSourceSha256(input.projectRoot, relpath)) {
       failures.push({ file: relpath, reason: 'stale' });
       continue;
     }

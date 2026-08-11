@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -8,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   listProjectHtmlFiles,
   PROTOTYPE_QA_RECEIPT_VERSION,
+  prototypeSourceSha256,
   prototypeQaReceiptPath,
   validatePrototypeQaReceipts,
 } from '../src/prototype-qa.js';
@@ -23,14 +23,13 @@ afterEach(async () => {
 });
 
 async function writePassingReceipt(relpath: string, auditedAt = new Date().toISOString()) {
-  const content = await readFile(join(projectRoot, relpath));
   const receiptPath = prototypeQaReceiptPath(projectRoot, relpath);
   await mkdir(dirname(receiptPath), { recursive: true });
   await writeFile(receiptPath, JSON.stringify({
     version: PROTOTYPE_QA_RECEIPT_VERSION,
     projectId: 'project-1',
     file: relpath,
-    fileSha256: createHash('sha256').update(content).digest('hex'),
+    fileSha256: prototypeSourceSha256(projectRoot, relpath),
     auditedAt,
     passed: true,
     viewports: [
@@ -76,6 +75,22 @@ describe('prototype QA receipts', () => {
     await writeFile(join(projectRoot, 'index.html'), '<main>Changed</main>');
     expect(validatePrototypeQaReceipts({ projectRoot, htmlFiles: ['index.html'] })).toEqual([
       { file: 'index.html', reason: 'stale' },
+    ]);
+  });
+
+  it('invalidates a receipt when a linked local stylesheet changes', async () => {
+    await mkdir(join(projectRoot, 'screens'), { recursive: true });
+    await writeFile(join(projectRoot, 'screens', 'app.css'), 'h1 { color: red; }');
+    await writeFile(
+      join(projectRoot, 'screens', 'index.html'),
+      '<link rel="stylesheet" href="./app.css"><h1>Ready</h1>',
+    );
+    await writePassingReceipt('screens/index.html');
+
+    expect(validatePrototypeQaReceipts({ projectRoot, htmlFiles: ['screens/index.html'] })).toEqual([]);
+    await writeFile(join(projectRoot, 'screens', 'app.css'), 'h1 { color: blue; }');
+    expect(validatePrototypeQaReceipts({ projectRoot, htmlFiles: ['screens/index.html'] })).toEqual([
+      { file: 'screens/index.html', reason: 'stale' },
     ]);
   });
 });
