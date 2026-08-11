@@ -27,6 +27,12 @@ function ruleValue(block: string, property: string): string {
 }
 
 describe('workspace tabs chrome styles', () => {
+  it('gives the Talos embedded editor the full viewport when its tab bar is absent', () => {
+    const embedShell = cssDeclarations(shellCss, '.workspace-shell--talos-embed');
+
+    expect(ruleValue(embedShell, 'grid-template-rows')).toBe('minmax(0, 1fr)');
+  });
+
   it('keeps only a small intentional inset before the first tab', () => {
     const chrome = cssDeclarations(shellCss, '.workspace-tabs-chrome.app-chrome-header');
     const traffic = cssDeclarations(shellCss, '.workspace-tabs-chrome .workspace-tabs-traffic');
