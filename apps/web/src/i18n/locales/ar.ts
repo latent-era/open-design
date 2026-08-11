@@ -585,6 +585,7 @@ export const ar: Dict = {
   'settings.agentModelHead': 'النموذج لـ:',
   'settings.modelPicker': 'النموذج',
   'settings.modelSourceLive': 'مباشر من CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'إعداد CLI الافتراضي',
   'settings.modelSourceFallback': 'القائمة المضمنة',
   'settings.reasoningPicker': 'جهد التفكير',

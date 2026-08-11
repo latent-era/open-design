@@ -585,6 +585,7 @@ export const esES: Dict = {
   'settings.agentModelHead': 'Modelo para:',
   'settings.modelPicker': 'Modelo',
   'settings.modelSourceLive': 'En vivo desde la CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'Predeterminado de la CLI',
   'settings.modelSourceFallback': 'Lista integrada',
   'settings.reasoningPicker': 'Esfuerzo de razonamiento',

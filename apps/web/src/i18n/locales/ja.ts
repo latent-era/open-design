@@ -585,6 +585,7 @@ export const ja: Dict = {
   'settings.agentModelHead': 'モデル：',
   'settings.modelPicker': 'モデル',
   'settings.modelSourceLive': 'CLI から取得',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'CLI デフォルト',
   'settings.modelSourceFallback': '組み込みリスト',
   'settings.reasoningPicker': '推論の強さ',

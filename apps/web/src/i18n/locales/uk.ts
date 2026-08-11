@@ -585,6 +585,7 @@ export const uk: Dict = {
   'settings.agentModelHead': 'Модель для:',
   'settings.modelPicker': 'Модель',
   'settings.modelSourceLive': 'Наживо з CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'Типове значення CLI',
   'settings.modelSourceFallback': 'Вбудований список',
   'settings.reasoningPicker': 'Інтенсивність міркувань',

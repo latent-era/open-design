@@ -553,6 +553,7 @@ export interface Dict {
   'settings.agentModelHead': string;
   'settings.modelPicker': string;
   'settings.modelSourceLive': string;
+  'settings.talosRuntimeLoaded': string;
   'settings.modelUsesCliDefault': string;
   'settings.modelSourceFallback': string;
   'settings.reasoningPicker': string;

@@ -585,6 +585,7 @@ export const de: Dict = {
   'settings.agentModelHead': 'Modell für:',
   'settings.modelPicker': 'Modell',
   'settings.modelSourceLive': 'Live aus der CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'CLI-Standard',
   'settings.modelSourceFallback': 'Integrierte Liste',
   'settings.reasoningPicker': 'Reasoning-Aufwand',

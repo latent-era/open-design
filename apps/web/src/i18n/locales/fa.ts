@@ -585,6 +585,7 @@ export const fa: Dict = {
   'settings.agentModelHead': 'مدل برای:',
   'settings.modelPicker': 'مدل',
   'settings.modelSourceLive': 'زنده از CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'پیش‌فرض CLI',
   'settings.modelSourceFallback': 'فهرست داخلی',
   'settings.reasoningPicker': 'سطح استدلال',

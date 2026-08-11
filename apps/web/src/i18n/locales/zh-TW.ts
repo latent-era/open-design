@@ -587,6 +587,7 @@ export const zhTW: Dict = {
   "settings.agentModelHead": "模型：",
   "settings.modelPicker": "模型",
   "settings.modelSourceLive": "來自 CLI 的即時列表",
+  "settings.talosRuntimeLoaded": "Loaded now",
   "settings.modelUsesCliDefault": "CLI 預設設定",
   "settings.modelSourceFallback": "內建列表",
   "settings.reasoningPicker": "推理強度",

@@ -585,6 +585,7 @@ export const ko: Dict = {
   'settings.agentModelHead': '모델:',
   'settings.modelPicker': '모델',
   'settings.modelSourceLive': 'CLI에서 실시간 가져옴',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'CLI 기본값',
   'settings.modelSourceFallback': '내장 목록',
   'settings.reasoningPicker': '추론 (Reasoning)',

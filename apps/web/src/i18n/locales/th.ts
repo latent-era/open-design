@@ -585,6 +585,7 @@ export const th: Dict = {
   'settings.agentModelHead': 'โมเดลสำหรับ:',
   'settings.modelPicker': 'โมเดล',
   'settings.modelSourceLive': 'สดจาก CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'ค่าเริ่มต้น CLI',
   'settings.modelSourceFallback': 'รายการในตัว',
   'settings.reasoningPicker': 'ความพยายามในการให้เหตุผล',

@@ -585,6 +585,7 @@ export const ru: Dict = {
   'settings.agentModelHead': 'Модель для:',
   'settings.modelPicker': 'Модель',
   'settings.modelSourceLive': 'Из CLI в реальном времени',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'Значение CLI по умолчанию',
   'settings.modelSourceFallback': 'Встроенный список',
   'settings.reasoningPicker': 'Сложность рассуждений',

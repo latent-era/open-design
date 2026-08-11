@@ -585,6 +585,7 @@ export const id: Dict = {
   'settings.agentModelHead': 'Model untuk:',
   'settings.modelPicker': 'Model',
   'settings.modelSourceLive': 'Langsung dari CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'Default CLI',
   'settings.modelSourceFallback': 'Daftar bawaan',
   'settings.reasoningPicker': 'Kekuatan penalaran',

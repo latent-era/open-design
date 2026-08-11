@@ -585,6 +585,7 @@ export const tr: Dict = {
   'settings.agentModelHead': 'Model için:',
   'settings.modelPicker': 'Model',
   'settings.modelSourceLive': 'CLI\'dan canlı',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'CLI varsayılanı',
   'settings.modelSourceFallback': 'Yerleşik liste',
   'settings.reasoningPicker': 'Akıl yürütme eforu',

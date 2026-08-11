@@ -585,6 +585,7 @@ export const ptBR: Dict = {
   'settings.agentModelHead': 'Modelo para:',
   'settings.modelPicker': 'Modelo',
   'settings.modelSourceLive': 'Ao vivo da CLI',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'Padrão da CLI',
   'settings.modelSourceFallback': 'Lista integrada',
   'settings.reasoningPicker': 'Esforço de raciocínio',

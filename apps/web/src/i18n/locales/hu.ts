@@ -585,6 +585,7 @@ export const hu: Dict = {
   'settings.agentModelHead': 'Modell ehhez:',
   'settings.modelPicker': 'Modell',
   'settings.modelSourceLive': 'Élőben a CLI-ből',
+  'settings.talosRuntimeLoaded': 'Loaded now',
   'settings.modelUsesCliDefault': 'CLI-alapértelmezés',
   'settings.modelSourceFallback': 'Beépített lista',
   'settings.reasoningPicker': 'Gondolkodási erőfeszítés',
