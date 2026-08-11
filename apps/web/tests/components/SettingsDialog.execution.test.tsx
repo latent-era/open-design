@@ -160,6 +160,29 @@ const amrAgent: AgentInfo = {
   supportsCustomModel: false,
 };
 
+const talosQwenAgent: AgentInfo = {
+  id: 'talos-qwen',
+  name: 'Qwen Local',
+  bin: '/usr/local/bin/talos-opencode-runtime',
+  available: true,
+  version: '1.0.0',
+  models: [{ id: 'qwen_local/qwen3.6-35b', label: 'Qwen 3.6 35B' }],
+};
+
+const talosDeepseekAgent: AgentInfo = {
+  id: 'talos-deepseek',
+  name: 'DeepSeek Local',
+  bin: '/usr/local/bin/talos-opencode-runtime',
+  available: true,
+  version: '1.0.0',
+  models: [
+    {
+      id: 'deepseek_local/deepseek-v4-flash-0731-q2',
+      label: 'DeepSeek V4 Flash 0731 Q2',
+    },
+  ],
+};
+
 // recvqfYKutwWlQ: the AMR upgrade entry point must only render for a caller
 // who can actually act on it (`permissions.canManageBilling`), never just a
 // caller whose plan tier happens to be upgradeable. Personal workspaces
@@ -4195,6 +4218,48 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
           (nextConfig as Record<string, unknown>).agentId !== 'amr',
       ),
     ).toBe(false);
+  });
+
+  // Regression: the Settings agent-card picker only ever called `setCfg` and
+  // relied on the generic config autosave, so selecting Qwen/DeepSeek here
+  // showed "All changes saved" while the host runtime silently stayed on
+  // whichever local model was already loaded. InlineModelSwitcher (the chat
+  // header chip) already calls activateTalosLocalRuntime — this picker must
+  // trigger the same host switch, not just persist a preference.
+  it('activates the Talos local runtime when selecting a local model from Settings', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/talos/local-runtime' && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ agentId: 'talos-deepseek' });
+        return new Response(
+          JSON.stringify({
+            mode: 'coding',
+            qwen_active: false,
+            qwen_status_active: false,
+            ds4_active: true,
+            game_running: false,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderSettingsDialog(
+      { mode: 'daemon', agentId: 'talos-qwen' },
+      { agents: [talosQwenAgent, talosDeepseekAgent] },
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Local CLI/i }));
+    fireEvent.click(screen.getByTestId('settings-agent-select-talos-deepseek'));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/talos/local-runtime',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
   });
 });
 

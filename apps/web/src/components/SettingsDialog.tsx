@@ -51,6 +51,7 @@ import {
   amrLoginStatusEventReason,
 } from './amrLoginPolling';
 import {
+  activateTalosLocalRuntime,
   fetchAmrWalletSnapshot,
   fetchVelaLoginStatus,
   formatVelaBalanceUsd,
@@ -1698,6 +1699,16 @@ export function SettingsDialog({
   const [amrWalletSnapshot, setAmrWalletSnapshot] = useState<AmrWalletSnapshot | null>(null);
   const [amrWalletReady, setAmrWalletReady] = useState(false);
   const [hoveredAgentCardId, setHoveredAgentCardId] = useState<string | null>(null);
+  const [talosRuntimeTransition, setTalosRuntimeTransition] = useState<{
+    agentId: 'talos-qwen' | 'talos-deepseek';
+    state: 'switching' | 'error';
+  } | null>(null);
+  const talosRuntimeSwitching = talosRuntimeTransition?.state === 'switching';
+  useEffect(() => {
+    if (talosRuntimeTransition?.state !== 'error') return;
+    const timeout = window.setTimeout(() => setTalosRuntimeTransition(null), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [talosRuntimeTransition]);
   const [providerTestState, setProviderTestState] = useState<TestState>({
     status: 'idle',
   });
@@ -4596,8 +4607,15 @@ export function SettingsDialog({
                             isAmrAgent
                               ? ''
                               : cleanAgentVersionLabel(a.name, a.version);
-                          const metaLabel =
-                            a.authStatus === 'missing'
+                          const talosCardTransition =
+                            talosRuntimeTransition?.agentId === a.id
+                              ? talosRuntimeTransition
+                              : null;
+                          const metaLabel = talosCardTransition
+                            ? talosCardTransition.state === 'switching'
+                              ? t('common.loading')
+                              : t('settings.autosaveError')
+                            : a.authStatus === 'missing'
                               ? t('settings.agentAuthRequired')
                               : a.authStatus === 'unknown'
                                 ? t('settings.agentAuthUnknown')
@@ -4739,6 +4757,12 @@ export function SettingsDialog({
                                   type="button"
                                   className="agent-card-select"
                                   data-testid={`settings-agent-select-${a.id}`}
+                                  disabled={talosRuntimeSwitching}
+                                  aria-busy={
+                                    talosRuntimeTransition?.agentId === a.id
+                                      ? 'true'
+                                      : undefined
+                                  }
                                   onClick={() => {
                                     trackSettingsLocalCliClick(analytics.track, {
                                       page_name: 'settings',
@@ -4758,11 +4782,41 @@ export function SettingsDialog({
                                         },
                                       );
                                     }
+                                    const previousAgentId = cfg.agentId;
                                     setCfg((c) => ({ ...c, agentId: a.id }));
+                                    if (
+                                      a.id !== previousAgentId &&
+                                      (a.id === 'talos-qwen' || a.id === 'talos-deepseek')
+                                    ) {
+                                      const nextAgentId = a.id;
+                                      setTalosRuntimeTransition({
+                                        agentId: nextAgentId,
+                                        state: 'switching',
+                                      });
+                                      void (async () => {
+                                        try {
+                                          await activateTalosLocalRuntime(nextAgentId);
+                                          setTalosRuntimeTransition(null);
+                                        } catch {
+                                          setTalosRuntimeTransition({
+                                            agentId: nextAgentId,
+                                            state: 'error',
+                                          });
+                                          if (previousAgentId) {
+                                            setCfg((c) => ({ ...c, agentId: previousAgentId }));
+                                          }
+                                        }
+                                      })();
+                                    }
                                   }}
                                   aria-pressed={active}
                                   >
-                                    <AgentIcon id={a.id} size={32} />
+                                    {talosRuntimeTransition?.agentId === a.id &&
+                                    talosRuntimeTransition.state === 'switching' ? (
+                                      <Icon name="spinner" size={32} className="icon-spin" />
+                                    ) : (
+                                      <AgentIcon id={a.id} size={32} />
+                                    )}
                                     <div className="agent-card-body">
                                       <div
                                         className={
