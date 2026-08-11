@@ -57,6 +57,8 @@ test('local agent profiles inherit a base adapter and can pin the default model'
         'zyb-claude',
         'zyb-gpt',
       ]);
+      assert.equal(profile.listModels, undefined);
+      assert.equal(profile.fetchModels, undefined);
       assert.deepEqual(profile.env, {
         ZCODE_ROUTE: 'design',
         RETRIES: '2',

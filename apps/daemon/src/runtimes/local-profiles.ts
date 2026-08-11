@@ -160,22 +160,33 @@ function createLocalAgentDef(
       : id;
   const prefixArgs = normalizeStringList(profile.args ?? profile.prefixArgs);
   const env = normalizeEnvMap(profile.env);
-  const fallbackModels =
-    normalizeModelOptions(profile.models ?? profile.fallbackModels) ??
-    base.fallbackModels;
+  const explicitModels = normalizeModelOptions(
+    profile.models ?? profile.fallbackModels,
+  );
+  const fallbackModels = explicitModels ?? base.fallbackModels;
   const versionArgs = normalizeStringList(profile.versionArgs);
   const helpArgs = normalizeStringList(profile.helpArgs);
   const defaultModel = normalizeDefaultModel(profile.defaultModel);
-  const { authProbe: baseAuthProbe, ...baseWithoutAuthProbe } = base;
+  const {
+    authProbe: baseAuthProbe,
+    listModels: baseListModels,
+    fetchModels: baseFetchModels,
+    ...baseWithoutDetection
+  } = base;
 
   return {
-    ...baseWithoutAuthProbe,
+    ...baseWithoutDetection,
     id,
     name,
     bin,
     versionArgs: versionArgs.length > 0 ? versionArgs : base.versionArgs,
     ...(helpArgs.length > 0 ? { helpArgs } : {}),
     fallbackModels,
+    // An explicit profile catalogue is authoritative. Inheriting the base
+    // adapter's live model probe would otherwise mix unrelated provider
+    // models into a wrapper that only exposes the configured local models.
+    ...(!explicitModels && baseListModels ? { listModels: baseListModels } : {}),
+    ...(!explicitModels && baseFetchModels ? { fetchModels: baseFetchModels } : {}),
     env,
     // Carry the base adapter's classifier identity so an inherited probe keeps
     // its tailored auth parsing under the profile id (#4456).
