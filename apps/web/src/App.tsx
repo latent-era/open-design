@@ -88,8 +88,11 @@ import { openFirstPartyExternalLinkFromClick } from './first-party-external-link
 import {
   RUNS_CHANGED_EVENT,
   fetchAmrModels,
+  fetchTalosLocalRuntimeStatus,
   fetchVelaLoginStatus,
+  isTalosLocalRuntimeReady,
   listProjectRuns,
+  type TalosLocalRuntimeStatus,
   type VelaLoginStatus,
 } from './providers/daemon';
 import {
@@ -949,6 +952,8 @@ function AppInner() {
   const [integrationInitialTab, setIntegrationInitialTab] = useState<IntegrationTab>('mcp');
   const [daemonLive, setDaemonLive] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [talosRuntimeStatus, setTalosRuntimeStatus] =
+    useState<TalosLocalRuntimeStatus | null>(null);
   const amrModelsRef = useRef<AmrModelsResponse | null>(null);
   const amrPollGenerationRef = useRef(0);
   const agentStreamRequestSeqRef = useRef(0);
@@ -2244,6 +2249,55 @@ function AppInner() {
     config.onboardingCompleted,
     talosEmbedMode,
   ]);
+
+  // Talos local agents run on separate host hardware whose loaded model can
+  // change independently of this app (a direct API call, another tab,
+  // manual intervention on the host) — see the 2026-08-11 Talos runtime
+  // status indicator design doc. Check the real host state once per app
+  // load so a stale saved selection gets corrected instead of silently
+  // lying to the user about what's actually running.
+  const talosRuntimeStatusFetchedRef = useRef(false);
+  useEffect(() => {
+    if (talosRuntimeStatusFetchedRef.current) return;
+    if (agentsLoading) return;
+    const hasTalosAgent = agents.some(
+      (a) => a.id === 'talos-qwen' || a.id === 'talos-deepseek',
+    );
+    if (!hasTalosAgent) return;
+    talosRuntimeStatusFetchedRef.current = true;
+    void fetchTalosLocalRuntimeStatus()
+      .then(setTalosRuntimeStatus)
+      .catch(() => {
+        // Silent by design: this is a pure enhancement, never a blocking
+        // path. A failed check just means no correction and no badge.
+      });
+  }, [agents, agentsLoading]);
+
+  // Only correct a selection that is ALREADY a Talos agent — never pull the
+  // user onto Talos from Codex/AMR/anything else just because a Talos model
+  // happens to be loaded in the background (see design doc "Non-goals").
+  const talosRuntimeCorrectedRef = useRef(false);
+  useEffect(() => {
+    if (talosRuntimeCorrectedRef.current) return;
+    if (!talosRuntimeStatus) return;
+    if (config.agentId !== 'talos-qwen' && config.agentId !== 'talos-deepseek') return;
+    const actualAgentId = isTalosLocalRuntimeReady(talosRuntimeStatus, 'talos-qwen')
+      ? 'talos-qwen'
+      : isTalosLocalRuntimeReady(talosRuntimeStatus, 'talos-deepseek')
+        ? 'talos-deepseek'
+        : null;
+    // Neither flag set (mid-transition, or paused by llm-game-guard): an
+    // ambiguous state is not grounds for a correction.
+    if (!actualAgentId || actualAgentId === config.agentId) return;
+    talosRuntimeCorrectedRef.current = true;
+    setConfig((prev) => {
+      if (prev.agentId !== config.agentId) return prev;
+      const next: AppConfig = { ...prev, agentId: actualAgentId };
+      saveConfig(next);
+      void syncConfigToDaemon(next);
+      return next;
+    });
+  }, [talosRuntimeStatus, config.agentId]);
 
   // Auto-pick the default design system the same way — only after daemon
   // config has merged so we never overwrite a daemon-stored selection.
@@ -4701,6 +4755,7 @@ function AppInner() {
       initial={config}
       agents={agents}
       agentsLoading={agentsLoading}
+      talosRuntimeStatus={talosRuntimeStatus}
       daemonLive={daemonLive}
       appVersionInfo={appVersionInfo}
       welcome={presentation === 'modal' ? settingsWelcome : false}
