@@ -76,6 +76,7 @@ describe('browser use diagnostics', () => {
     const state = buildBrowserUseRunState({
       requested: true,
       agentId: 'codex',
+      backendAvailable: false,
       diagnostics: collectBrowserUseDiscoveryFacts({
         registryPath: join(tempDir, 'missing'),
       }),
@@ -86,6 +87,20 @@ describe('browser use diagnostics', () => {
       available: false,
       reason: 'no-matching-browser-backend',
     });
+  });
+
+  it('reports the managed Browserless backend as available for Codex', () => {
+    const state = buildBrowserUseRunState({
+      requested: true,
+      agentId: 'codex',
+      backendAvailable: true,
+      diagnostics: collectBrowserUseDiscoveryFacts({
+        registryPath: join(tempDir, 'missing'),
+      }),
+    });
+
+    expect(state).toMatchObject({ requested: true, available: true });
+    expect(state?.reason).toBeUndefined();
   });
 
   it('leaves non-Codex browser requests outside this Codex-specific state', () => {
@@ -102,6 +117,7 @@ describe('browser use diagnostics', () => {
     const state = buildBrowserUseRunState({
       requested: true,
       agentId: 'codex',
+      backendAvailable: false,
       diagnostics: collectBrowserUseDiscoveryFacts({
         registryPath: join(tempDir, 'missing'),
       }),
