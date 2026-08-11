@@ -286,6 +286,30 @@ fsTest(
 );
 
 fsTest(
+  'resolveAgentExecutable prefers an absolute wrapper over inherited fallback bins',
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), 'od-agents-resolve-'));
+    try {
+      const wrapper = join(dir, 'talos-opencode-runtime');
+      writeFileSync(wrapper, '#!/bin/sh\n');
+      writeFileSync(join(dir, 'opencode'), '');
+      chmodSync(wrapper, 0o755);
+      chmodSync(join(dir, 'opencode'), 0o755);
+      process.env.OD_AGENT_HOME = dir;
+      process.env.PATH = dir;
+
+      const resolved = resolveAgentExecutable(minimalAgentDef({
+        bin: wrapper,
+        fallbackBins: ['opencode'],
+      }));
+      assert.equal(resolved, wrapper);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+fsTest(
   'resolveAgentExecutable falls back through fallbackBins when def.bin is missing',
   () => {
     const dir = mkdtempSync(join(tmpdir(), 'od-agents-resolve-'));

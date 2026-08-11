@@ -2358,6 +2358,11 @@
   padding: 6px 8px;
   border-radius: var(--radius-sm);
 }
+.inline-switcher__warn.is-error {
+  color: var(--red, #b42318);
+  background: color-mix(in srgb, var(--red, #b42318) 8%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--red, #b42318) 28%, transparent);
+}
 
 .inline-switcher__more {
   appearance: none;
