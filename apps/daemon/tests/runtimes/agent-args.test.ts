@@ -806,6 +806,7 @@ test('codex buildArgs clamps reasoning effort per model', () => {
     ['gpt-5.3', 'minimal', 'low'],
     ['gpt-5.4', 'minimal', 'low'],
     ['gpt-5.5', 'minimal', 'low'],
+    ['gpt-5.6-sol', 'minimal', 'low'],
     ['gpt-5.5', 'low', 'low'],
     ['gpt-5.5', 'medium', 'medium'],
     ['gpt-5.5', 'high', 'high'],

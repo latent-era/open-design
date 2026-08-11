@@ -145,6 +145,7 @@ export const codexAgentDef = {
     },
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
       {
         id: 'gpt-5.5',
         label: 'gpt-5.5',
