@@ -4231,6 +4231,12 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
       const url = input.toString();
       if (url === '/api/talos/local-runtime' && init?.method === 'POST') {
         expect(JSON.parse(String(init.body))).toEqual({ agentId: 'talos-deepseek' });
+        return new Response(JSON.stringify({ accepted: true, mode: 'coding' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === '/api/talos/local-runtime') {
         return new Response(
           JSON.stringify({
             mode: 'coding',
@@ -4252,13 +4258,20 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     );
 
     fireEvent.click(screen.getByRole('tab', { name: /Local CLI/i }));
-    fireEvent.click(screen.getByTestId('settings-agent-select-talos-deepseek'));
+    const deepseekCard = screen.getByTestId('settings-agent-select-talos-deepseek');
+    fireEvent.click(deepseekCard);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/talos/local-runtime',
         expect.objectContaining({ method: 'POST' }),
       );
+    });
+
+    // Readiness comes from the poll settling, not from the trigger request
+    // resolving — confirm the grid re-enables once the host reports ready.
+    await waitFor(() => {
+      expect(deepseekCard).not.toBeDisabled();
     });
   });
 });

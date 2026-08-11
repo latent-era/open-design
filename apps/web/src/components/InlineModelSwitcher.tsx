@@ -229,12 +229,15 @@ export function InlineModelSwitcher({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const campaignBenefitTrackedForOpenRef = useRef(false);
+  const talosRuntimeAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (talosRuntimeTransition?.state !== 'ready') return;
     const timeout = window.setTimeout(() => setTalosRuntimeTransition(null), 2500);
     return () => window.clearTimeout(timeout);
   }, [talosRuntimeTransition]);
+
+  useEffect(() => () => talosRuntimeAbortRef.current?.abort(), []);
   // Viewport clamp for the popover (issue #99): the anchor chip can sit
   // anywhere on screen (home hero mid-page, chat composer at the bottom), so
   // a fixed downward placement runs past the screen edge once the model list
@@ -563,11 +566,15 @@ export function InlineModelSwitcher({
         (agentId === 'talos-qwen' || agentId === 'talos-deepseek')
       ) {
         setTalosRuntimeTransition({ agentId, state: 'switching' });
+        talosRuntimeAbortRef.current?.abort();
+        const abortController = new AbortController();
+        talosRuntimeAbortRef.current = abortController;
         try {
-          await activateTalosLocalRuntime(agentId);
+          await activateTalosLocalRuntime(agentId, { signal: abortController.signal });
           setTalosRuntimeTransition({ agentId, state: 'ready' });
           setOpen(false);
         } catch {
+          if (abortController.signal.aborted) return;
           setTalosRuntimeTransition({ agentId, state: 'error' });
           if (previousAgentId) onAgentChange?.(previousAgentId);
         }

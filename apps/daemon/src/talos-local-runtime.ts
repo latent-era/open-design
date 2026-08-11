@@ -2,7 +2,9 @@ export type TalosLocalAgentId = 'talos-qwen' | 'talos-deepseek';
 export type TalosLocalRuntimeMode = 'chat' | 'coding';
 
 export interface TalosLocalRuntimeStatus {
-  mode: TalosLocalRuntimeMode;
+  // The controller also reports a transient 'transitioning' value mid-switch;
+  // callers must key readiness off the *_active flags below, not this field.
+  mode: TalosLocalRuntimeMode | 'transitioning';
   qwen_active: boolean;
   qwen_status_active: boolean;
   ds4_active: boolean;
@@ -27,6 +29,13 @@ function controllerConfig(
   return baseUrl && token ? { baseUrl, token } : null;
 }
 
+// A cold model load can outlast any reasonable single HTTP request (observed
+// >190s in production), so callers must not treat this endpoint's response
+// latency as a readiness signal — see activateTalosLocalAgent below.
+export function hasTalosLocalRuntimeConfig(env: NodeJS.ProcessEnv): boolean {
+  return controllerConfig(env) !== null;
+}
+
 async function controllerRequest(
   env: NodeJS.ProcessEnv,
   path: '/status' | '/mode',
@@ -40,7 +49,7 @@ async function controllerRequest(
       authorization: `Bearer ${config.token}`,
       ...(init?.body ? { 'content-type': 'application/json' } : {}),
     },
-    signal: AbortSignal.timeout(190_000),
+    signal: AbortSignal.timeout(600_000),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { error?: unknown };

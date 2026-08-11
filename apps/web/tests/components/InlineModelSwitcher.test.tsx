@@ -268,6 +268,18 @@ describe('InlineModelSwitcher AMR row', () => {
       if (url === '/api/talos/local-runtime' && init?.method === 'POST') {
         return await runtimeResponse;
       }
+      if (url === '/api/talos/local-runtime') {
+        return new Response(
+          JSON.stringify({
+            mode: 'coding',
+            qwen_active: false,
+            qwen_status_active: false,
+            ds4_active: true,
+            game_running: false,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
       if (url.includes('/api/workspace/')) {
         return new Response(JSON.stringify({ context: null }), {
           status: 200,
@@ -313,16 +325,10 @@ describe('InlineModelSwitcher AMR row', () => {
     );
 
     finishRuntimeSwitch?.(
-      new Response(
-        JSON.stringify({
-          mode: 'coding',
-          qwen_active: false,
-          qwen_status_active: false,
-          ds4_active: true,
-          game_running: false,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+      new Response(JSON.stringify({ accepted: true, mode: 'coding' }), {
+        status: 202,
+        headers: { 'content-type': 'application/json' },
+      }),
     );
 
     await waitFor(() => {
@@ -330,6 +336,96 @@ describe('InlineModelSwitcher AMR row', () => {
       expect(chip).not.toBeDisabled();
       expect(chip).not.toHaveAttribute('aria-busy');
     });
+  });
+
+  // Regression: a cold model load can outlast the single HTTP request that
+  // used to double as both "trigger the switch" and "confirm it's ready".
+  // When that request errored/timed out, the selector reverted to the
+  // previous agent even though the host kept switching in the background
+  // and eventually succeeded — leaving the UI permanently out of sync with
+  // the real host state. The switch must now be confirmed by polling actual
+  // status, not by a single request resolving, so slow-but-successful
+  // switches must not revert the selection.
+  it('does not revert the selection while the host is still loading a slow model switch', async () => {
+    let getCallCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/talos/local-runtime' && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ agentId: 'talos-deepseek' });
+        return new Response(JSON.stringify({ accepted: true, mode: 'coding' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === '/api/talos/local-runtime') {
+        getCallCount += 1;
+        const ready = getCallCount >= 3;
+        return new Response(
+          JSON.stringify({
+            mode: ready ? 'coding' : 'transitioning',
+            qwen_active: false,
+            qwen_status_active: false,
+            ds4_active: ready,
+            game_running: false,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/api/workspace/')) {
+        return new Response(JSON.stringify({ context: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { onAgentChange } = renderSwitcher(
+      {
+        agentId: 'talos-qwen',
+        agentModels: {
+          'talos-qwen': { model: 'qwen_local/qwen3.6-35b' },
+          'talos-deepseek': {
+            model: 'deepseek_local/deepseek-v4-flash-0731-q2',
+          },
+        },
+      },
+      [qwenAgent, deepSeekAgent],
+    );
+
+    const chip = screen.getByTestId('inline-model-switcher-chip');
+    fireEvent.click(chip);
+    const popover = screen.getByTestId('inline-model-switcher-popover');
+    vi.useFakeTimers();
+    fireEvent.click(
+      within(popover).getByTestId('inline-model-switcher-agent-talos-deepseek'),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onAgentChange).toHaveBeenCalledWith('talos-deepseek');
+    expect(chip).toBeDisabled();
+
+    // Two more not-ready polls tick by (3s apart) — the selector must stay
+    // switching, not revert to Qwen, while the host is still loading.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(chip).toBeDisabled();
+    expect(onAgentChange).not.toHaveBeenCalledWith('talos-qwen');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(screen.queryByTestId('inline-model-switcher-popover')).toBeNull();
+    expect(chip).not.toBeDisabled();
+    expect(onAgentChange).not.toHaveBeenCalledWith('talos-qwen');
+    vi.useRealTimers();
   });
 
   it('shows the AMR reminder dot once when another CLI is selected', async () => {

@@ -81,23 +81,73 @@ const API_MODE_AGENT_IDS = new Set([
 ]);
 
 export interface TalosLocalRuntimeStatus {
-  mode: 'chat' | 'coding';
+  // The controller also reports a transient 'transitioning' value mid-switch;
+  // callers must key readiness off the *_active flags below, not this field.
+  mode: 'chat' | 'coding' | 'transitioning';
   qwen_active: boolean;
   qwen_status_active: boolean;
   ds4_active: boolean;
   game_running: boolean;
 }
 
+export async function fetchTalosLocalRuntimeStatus(
+  signal?: AbortSignal,
+): Promise<TalosLocalRuntimeStatus> {
+  const response = await fetch('/api/talos/local-runtime', { signal });
+  if (!response.ok) throw new Error('Unable to fetch local runtime status');
+  return await response.json() as TalosLocalRuntimeStatus;
+}
+
+function isTalosLocalRuntimeReady(
+  status: TalosLocalRuntimeStatus,
+  agentId: 'talos-qwen' | 'talos-deepseek',
+): boolean {
+  return agentId === 'talos-qwen'
+    ? status.qwen_active && status.qwen_status_active
+    : status.ds4_active;
+}
+
+// A cold model load can take minutes — well past any single request's
+// lifetime (observed >190s in production) — so the POST below only
+// *triggers* the switch. Readiness is confirmed by polling actual host
+// state instead of by that request resolving; treating "request timed out"
+// as "switch failed" was the bug this replaced (it left the UI reverted to
+// the previous agent while the host kept switching in the background and
+// eventually succeeded, desyncing the UI from reality).
 export async function activateTalosLocalRuntime(
   agentId: 'talos-qwen' | 'talos-deepseek',
+  options: { signal?: AbortSignal; pollIntervalMs?: number; timeoutMs?: number } = {},
 ): Promise<TalosLocalRuntimeStatus> {
   const response = await fetch('/api/talos/local-runtime', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ agentId }),
+    signal: options.signal,
   });
   if (!response.ok) throw new Error('Unable to activate local model');
-  return await response.json() as TalosLocalRuntimeStatus;
+
+  const pollIntervalMs = options.pollIntervalMs ?? 3000;
+  const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
+  const deadline = Date.now() + timeoutMs;
+  let consecutivePollFailures = 0;
+  for (;;) {
+    let status: TalosLocalRuntimeStatus;
+    try {
+      status = await fetchTalosLocalRuntimeStatus(options.signal);
+      consecutivePollFailures = 0;
+    } catch (error) {
+      consecutivePollFailures += 1;
+      if (consecutivePollFailures >= 3) throw error;
+      status = null as unknown as TalosLocalRuntimeStatus;
+    }
+    if (status && isTalosLocalRuntimeReady(status, agentId)) return status;
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for the local model to become ready');
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, pollIntervalMs);
+    });
+  }
 }
 
 export function latestUserPromptFromHistory(history: ChatMessage[]): string {
