@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { activateTalosLocalRuntime } from '../../src/providers/daemon';
+import { activateTalosLocalRuntime, isTalosLocalRuntimeReady } from '../../src/providers/daemon';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -90,5 +90,37 @@ describe('activateTalosLocalRuntime', () => {
       'Unable to activate local model',
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isTalosLocalRuntimeReady', () => {
+  it('is true for talos-qwen only when both qwen flags are active', () => {
+    expect(
+      isTalosLocalRuntimeReady(
+        { mode: 'chat', qwen_active: true, qwen_status_active: true, ds4_active: false, game_running: false },
+        'talos-qwen',
+      ),
+    ).toBe(true);
+    expect(
+      isTalosLocalRuntimeReady(
+        { mode: 'transitioning', qwen_active: true, qwen_status_active: false, ds4_active: false, game_running: false },
+        'talos-qwen',
+      ),
+    ).toBe(false);
+  });
+
+  it('is true for talos-deepseek only when ds4_active is true', () => {
+    expect(
+      isTalosLocalRuntimeReady(
+        { mode: 'coding', qwen_active: false, qwen_status_active: false, ds4_active: true, game_running: false },
+        'talos-deepseek',
+      ),
+    ).toBe(true);
+    expect(
+      isTalosLocalRuntimeReady(
+        { mode: 'transitioning', qwen_active: false, qwen_status_active: false, ds4_active: false, game_running: false },
+        'talos-deepseek',
+      ),
+    ).toBe(false);
   });
 });

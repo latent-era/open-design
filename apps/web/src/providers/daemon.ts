@@ -98,7 +98,7 @@ export async function fetchTalosLocalRuntimeStatus(
   return await response.json() as TalosLocalRuntimeStatus;
 }
 
-function isTalosLocalRuntimeReady(
+export function isTalosLocalRuntimeReady(
   status: TalosLocalRuntimeStatus,
   agentId: 'talos-qwen' | 'talos-deepseek',
 ): boolean {
