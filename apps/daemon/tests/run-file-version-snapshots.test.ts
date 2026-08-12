@@ -39,6 +39,29 @@ describe('run file version snapshots', () => {
     expect(result.snapshots.map((s) => s.fileName)).toEqual(['screens/boxing-calendar.css']);
   });
 
+  it('records the version each file was at before the run', async () => {
+    // Undo needs the prior version. Deriving "the one before this" from a
+    // listing is ambiguous once two runs interleave on the same file, so it is
+    // captured at snapshot time instead.
+    const { projectsRoot, projectId, projectRoot } = project();
+    const cssPath = path.join(projectRoot, 'screens', 'boxing-calendar.css');
+
+    fs.writeFileSync(cssPath, '.a { color: red; }', 'utf8');
+    const first = await snapshotAiHtmlVersionsForRun({
+      projectsRoot, projectId, projectRoot,
+      diff: { touchedPaths: [cssPath] }, prompt: 'first',
+    });
+
+    fs.writeFileSync(cssPath, '.a { color: blue; }', 'utf8');
+    const second = await snapshotAiHtmlVersionsForRun({
+      projectsRoot, projectId, projectRoot,
+      diff: { touchedPaths: [cssPath] }, prompt: 'second',
+    });
+
+    expect(first.snapshots[0]?.previousVersionId).toBeNull();
+    expect(second.snapshots[0]?.previousVersionId).toBe(first.snapshots[0]?.version.id);
+  });
+
   it('still ignores binary and unlisted file types', async () => {
     const { projectsRoot, projectId, projectRoot } = project();
     const pngPath = path.join(projectRoot, 'screens', 'shot.png');

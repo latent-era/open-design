@@ -7,7 +7,7 @@ import type {
   ProjectFileVersionPromptSource,
 } from '@open-design/contracts';
 
-import { ensureCurrentProjectFileVersion, isVersionableFileName } from './project-file-versions.js';
+import { ensureCurrentProjectFileVersion, isVersionableFileName, listProjectFileVersions } from './project-file-versions.js';
 import { OPEN_DESIGN_PLUGIN_ID } from './mcp-observability.js';
 import type { RunArtifactDiff } from './run-artifact-fs.js';
 
@@ -30,6 +30,11 @@ export interface AiHtmlVersionSnapshotFailure {
 export interface AiHtmlVersionSnapshot {
   fileName: string;
   version: ProjectFileVersion;
+  /** The file's newest version immediately before this run wrote it, or null
+   *  when the run created the file's first version. Captured here rather than
+   *  derived later: once two runs interleave on one file, "the version before
+   *  this one" is ambiguous from a listing alone. Undo restores to this. */
+  previousVersionId: string | null;
 }
 
 export interface AiHtmlVersionSnapshotResult {
@@ -99,6 +104,15 @@ export async function snapshotAiHtmlVersionsForRun(
 
   const results = await Promise.allSettled(work.map(async ({ filePath, projectRelPath }) => {
     const content = await fs.promises.readFile(filePath, 'utf8');
+    // Read the head before writing. A missing store is not an error here — it
+    // just means this run created the file's first version.
+    const existing = await listProjectFileVersions(
+      input.projectsRoot,
+      input.projectId,
+      projectRelPath,
+      input.metadata,
+    ).catch(() => []);
+    const previousVersionId = existing.at(-1)?.id ?? null;
     const version = await ensureCurrentProjectFileVersion(
       input.projectsRoot,
       input.projectId,
@@ -112,7 +126,7 @@ export async function snapshotAiHtmlVersionsForRun(
       },
       input.metadata,
     );
-    return version ? { fileName: projectRelPath, version } : null;
+    return version ? { fileName: projectRelPath, version, previousVersionId } : null;
   }));
   const failures = results.flatMap((result, index) => {
     if (result.status === 'fulfilled') return [];
