@@ -90,7 +90,6 @@ import {
   fetchAmrModels,
   fetchTalosLocalRuntimeStatus,
   fetchVelaLoginStatus,
-  isTalosLocalRuntimeReady,
   listProjectRuns,
   type TalosLocalRuntimeStatus,
   type VelaLoginStatus,
@@ -2252,10 +2251,17 @@ function AppInner() {
 
   // Talos local agents run on separate host hardware whose loaded model can
   // change independently of this app (a direct API call, another tab,
-  // manual intervention on the host) — see the 2026-08-11 Talos runtime
-  // status indicator design doc. Check the real host state once per app
-  // load so a stale saved selection gets corrected instead of silently
-  // lying to the user about what's actually running.
+  // manual intervention on the host). Read that host state once per app load
+  // purely so Settings can DISPLAY which local model is actually loaded.
+  //
+  // This must never write back to `config.agentId`. An earlier version of
+  // this feature auto-"corrected" a stale Talos selection to match the host,
+  // on the assumption host state is trustworthy. It is not: the host can sit
+  // in a transient or flapping state (see the local runtime controller's
+  // unguarded concurrent /mode handling), and sampling it mid-flap silently
+  // overwrote a user's explicit model choice — which also moves them to a
+  // different agent's conversation thread, with no visible signal that
+  // anything changed. Display only; the user owns the selection.
   const talosRuntimeStatusFetchedRef = useRef(false);
   useEffect(() => {
     if (talosRuntimeStatusFetchedRef.current) return;
@@ -2269,35 +2275,9 @@ function AppInner() {
       .then(setTalosRuntimeStatus)
       .catch(() => {
         // Silent by design: this is a pure enhancement, never a blocking
-        // path. A failed check just means no correction and no badge.
+        // path. A failed check just means no badge.
       });
   }, [agents, agentsLoading]);
-
-  // Only correct a selection that is ALREADY a Talos agent — never pull the
-  // user onto Talos from Codex/AMR/anything else just because a Talos model
-  // happens to be loaded in the background (see design doc "Non-goals").
-  const talosRuntimeCorrectedRef = useRef(false);
-  useEffect(() => {
-    if (talosRuntimeCorrectedRef.current) return;
-    if (!talosRuntimeStatus) return;
-    if (config.agentId !== 'talos-qwen' && config.agentId !== 'talos-deepseek') return;
-    const actualAgentId = isTalosLocalRuntimeReady(talosRuntimeStatus, 'talos-qwen')
-      ? 'talos-qwen'
-      : isTalosLocalRuntimeReady(talosRuntimeStatus, 'talos-deepseek')
-        ? 'talos-deepseek'
-        : null;
-    // Neither flag set (mid-transition, or paused by llm-game-guard): an
-    // ambiguous state is not grounds for a correction.
-    if (!actualAgentId || actualAgentId === config.agentId) return;
-    talosRuntimeCorrectedRef.current = true;
-    setConfig((prev) => {
-      if (prev.agentId !== config.agentId) return prev;
-      const next: AppConfig = { ...prev, agentId: actualAgentId };
-      saveConfig(next);
-      void syncConfigToDaemon(next);
-      return next;
-    });
-  }, [talosRuntimeStatus, config.agentId]);
 
   // Auto-pick the default design system the same way — only after daemon
   // config has merged so we never overwrite a daemon-stored selection.

@@ -154,7 +154,7 @@ const talosAgents = [
   },
 ];
 
-describe('App Talos runtime status auto-correction', () => {
+describe('App Talos runtime status (display-only)', () => {
   beforeEach(() => {
     mockedDaemonIsLive.mockResolvedValue(true);
     mockedFetchAgentsStream.mockResolvedValue([...talosAgents]);
@@ -182,28 +182,54 @@ describe('App Talos runtime status auto-correction', () => {
     vi.clearAllMocks();
   });
 
-  it('corrects a stale talos-qwen selection to talos-deepseek when the host is actually running DeepSeek', async () => {
+  it('reads host runtime status once when a Talos agent is installed', async () => {
     mockedLoadConfig.mockReturnValue(baseConfig({ agentId: 'talos-qwen' }));
     mockedFetchTalosLocalRuntimeStatus.mockResolvedValue({
-      mode: 'coding',
-      qwen_active: false,
-      qwen_status_active: false,
-      ds4_active: true,
+      mode: 'chat',
+      qwen_active: true,
+      qwen_status_active: true,
+      ds4_active: false,
       game_running: false,
     });
 
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('agent-id').textContent).toBe('talos-deepseek');
+      expect(mockedFetchTalosLocalRuntimeStatus).toHaveBeenCalled();
     });
-    expect(mockedSyncConfigToDaemon).toHaveBeenCalledWith(
-      expect.objectContaining({ agentId: 'talos-deepseek' }),
-    );
+    expect(mockedFetchTalosLocalRuntimeStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('does not touch a non-Talos selection even when a Talos model is loaded', async () => {
+  it('does not read host runtime status when no Talos agent is installed', async () => {
+    mockedFetchAgentsStream.mockResolvedValue([
+      {
+        id: 'codex',
+        name: 'Codex CLI',
+        bin: 'codex',
+        available: true,
+        version: '0.80.0',
+        models: [{ id: 'default', label: 'Default' }],
+      },
+    ]);
     mockedLoadConfig.mockReturnValue(baseConfig({ agentId: 'codex' }));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-id').textContent).toBe('codex');
+    });
+    expect(mockedFetchTalosLocalRuntimeStatus).not.toHaveBeenCalled();
+  });
+
+  // Regression (2026-08-11 incident): an earlier version of this feature
+  // auto-"corrected" a stale Talos selection to whatever the host reported
+  // loaded. The host is NOT a trustworthy source for that decision — it can
+  // sit transiently in, or flap between, modes, and sampling it mid-flap
+  // silently overwrote the user's explicit Qwen choice with DeepSeek. That
+  // also silently moves the user to a different agent's conversation thread.
+  // Host state is display-only; the selection belongs to the user.
+  it('never rewrites the saved agent selection, even when the host reports a different model loaded', async () => {
+    mockedLoadConfig.mockReturnValue(baseConfig({ agentId: 'talos-qwen' }));
     mockedFetchTalosLocalRuntimeStatus.mockResolvedValue({
       mode: 'coding',
       qwen_active: false,
@@ -217,7 +243,7 @@ describe('App Talos runtime status auto-correction', () => {
     await waitFor(() => {
       expect(mockedFetchTalosLocalRuntimeStatus).toHaveBeenCalled();
     });
-    expect(screen.getByTestId('agent-id').textContent).toBe('codex');
+    expect(screen.getByTestId('agent-id').textContent).toBe('talos-qwen');
     expect(mockedSyncConfigToDaemon).not.toHaveBeenCalledWith(
       expect.objectContaining({ agentId: 'talos-deepseek' }),
     );
