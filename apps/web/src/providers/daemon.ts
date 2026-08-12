@@ -365,6 +365,11 @@ export interface DaemonStreamOptions {
   // workspace.
   projectId?: string | null;
   conversationId?: string | null;
+  /** The prototype page open in the viewer when the user sent this message.
+   *  Prototype verification gates on this page alone; other affected pages are
+   *  reported without failing the turn. The app knows this reliably, which is
+   *  why it beats inferring the page from the prompt text. */
+  previewFileName?: string | null;
   sessionMode?: ChatSessionMode;
   userMessageId?: string | null;
   assistantMessageId?: string | null;
@@ -729,6 +734,7 @@ export async function streamViaDaemon({
   handlers,
   projectId,
   conversationId,
+  previewFileName,
   sessionMode,
   userMessageId,
   assistantMessageId,
@@ -771,6 +777,7 @@ export async function streamViaDaemon({
     currentPrompt: latestUserPromptFromHistory(history),
     projectId: projectId ?? null,
     conversationId: conversationId ?? null,
+    previewFileName: previewFileName ?? null,
     sessionMode,
     userMessageId: userMessageId ?? null,
     assistantMessageId: assistantMessageId ?? null,

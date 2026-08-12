@@ -8944,6 +8944,7 @@ export async function startServer({
       imagePaths = [],
       projectId,
       conversationId,
+      previewFileName,
       assistantMessageId,
       clientRequestId,
       skillId,
@@ -9591,6 +9592,16 @@ export async function startServer({
       // every page as affected, and demanding a fresh audit for all of them
       // failed turns whose edits had succeeded — the cheapest possible change
       // carried the most expensive verification.
+      // Preference order: the page the user actually has open, then a
+      // solitary edited page, then the project entry file. The open page is
+      // first because it is the only one the app knows for certain — inferring
+      // the subject from the prompt text is a guess, and was already wrong in
+      // the reported case, where the user said "the Next Bell page" while the
+      // viewer had a different screen open.
+      const openPreviewFile =
+        typeof previewFileName === 'string' && previewFileName.trim()
+          ? previewFileName.replaceAll('\\', '/')
+          : null;
       const editedHtml = changedHtml.length === 1 ? changedHtml[0] : null;
       const configuredEntryFile =
         typeof projectRecord?.metadata?.entryFile === 'string'
@@ -9598,7 +9609,7 @@ export async function startServer({
           : null;
       const { blocking, advisory } = partitionPrototypeQaFiles({
         htmlFiles: [...new Set(htmlFiles)],
-        focusedFile: editedHtml ?? configuredEntryFile ?? null,
+        focusedFile: openPreviewFile ?? editedHtml ?? configuredEntryFile ?? null,
       });
       run.prototypeQaAdvisory = advisory;
       if (blocking.length === 0) return [];
