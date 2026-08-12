@@ -1091,6 +1091,9 @@ function AssistantMessageImpl({
                     taskActivity !== null ||
                     hasTodoSnapshot ||
                     message.id === errorCardOwnerId,
+                  startedAt: message.startedAt,
+                  endedAt: message.endedAt,
+                  durationMs: usage?.durationMs,
                 }}
               />
             ) : (
@@ -1109,6 +1112,9 @@ function AssistantMessageImpl({
                   hasTodoSnapshot ||
                   message.id === errorCardOwnerId
                 }
+                startedAt={message.startedAt}
+                endedAt={message.endedAt}
+                durationMs={usage?.durationMs}
               />
             )}
           </div>
@@ -1553,6 +1559,12 @@ interface AssistantFooterProps {
   // When the turn has an execution disclosure, its run state lives at the top
   // of the answer. The footer keeps only actions so run state is not repeated.
   hideRunStatus?: boolean;
+  // Run timing, so the footer can report how long the turn took. Only used
+  // when this footer owns run state; `TaskActivityCard` reports its own
+  // elapsed time for turns that have an execution disclosure.
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
 }
 
 function AssistantFooter({
@@ -1568,8 +1580,18 @@ function AssistantFooter({
   forceVisible = false,
   isLast = false,
   hideRunStatus = false,
+  startedAt,
+  endedAt,
+  durationMs,
 }: AssistantFooterProps) {
   const t = useT();
+  // A turn without tool calls or thinking renders no execution disclosure, so
+  // `TaskActivityCard` — which used to be the only thing reporting run
+  // duration — never mounts. That left every prose-only reply saying "Done"
+  // with no indication of whether it took a second or eight minutes, which
+  // reads as local models reporting less than cloud ones when the real
+  // difference is tool use, not the runtime.
+  const elapsed = useLiveElapsed(streaming, startedAt, endedAt, durationMs);
   if (
     !forceVisible &&
     !streaming &&
@@ -1602,6 +1624,7 @@ function AssistantFooter({
               ? t("assistant.unfinishedLabel")
               : t("assistant.doneLabel")}
           </span>
+          {elapsed ? <span className="assistant-elapsed">{elapsed}</span> : null}
         </>
       ) : null}
       {copyMarkdown || onFork || feedbackControls ? (

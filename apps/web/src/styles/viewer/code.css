@@ -980,6 +980,14 @@
   animation: pulse 1.2s ease-in-out infinite;
 }
 .assistant-label { font-weight: 500; color: var(--text-muted); font-size: 11px; }
+/* Run duration for turns with no execution disclosure, where TaskActivityCard
+   (and its own `.task-activity-elapsed`) never mounts. Matches the footer
+   label's scale and stays quieter than it. */
+.assistant-elapsed {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
 
 .assistant-flow {
   display: flex;

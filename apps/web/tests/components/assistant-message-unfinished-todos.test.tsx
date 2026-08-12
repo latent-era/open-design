@@ -124,7 +124,7 @@ describe('AssistantMessage unfinished todo state', () => {
     expect(screen.queryByRole('button', { name: 'Continue remaining tasks' })).toBeNull();
   });
 
-  it('hides answer-footer duration, token, and cost statistics', () => {
+  it('shows answer-footer duration but hides token and cost statistics', () => {
     render(
       <AssistantMessage
         message={{
@@ -141,7 +141,15 @@ describe('AssistantMessage unfinished todo state', () => {
       />,
     );
 
-    expect(screen.queryByText(/32s/)).toBeNull();
+    // Duration is deliberately kept while token counts and cost stay hidden.
+    // How long a turn took is a UX signal the reader acts on — it is the
+    // difference between "this is working" and "this is stuck" — whereas
+    // tokens and cost are accounting detail that belongs in telemetry. Turns
+    // with an execution disclosure already reported duration via
+    // TaskActivityCard; prose-only replies (which local models produce
+    // constantly, since they often answer without calling a tool) reported
+    // nothing at all.
+    expect(screen.getByText(/32s/)).toBeTruthy();
     expect(screen.queryByText(/1439 out/)).toBeNull();
     expect(screen.queryByText(/\$0\.0123/)).toBeNull();
   });
