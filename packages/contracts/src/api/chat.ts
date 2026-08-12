@@ -83,6 +83,12 @@ export interface ChatRequest {
   systemPrompt?: string;
   projectId?: string | null;
   conversationId?: string | null;
+  /** The prototype page open in the preview when the user sent this message.
+   *  Prototype verification gates on this page alone; every other affected
+   *  page is reported without failing the turn. The client always knows this
+   *  reliably, which is why it is preferred over inferring the page from the
+   *  prompt text. */
+  previewFileName?: string | null;
   sessionMode?: ChatSessionMode;
   /** Client-minted id for the latest user turn. The daemon pins this row before
    * the assistant row so concurrent best-effort message persistence cannot
@@ -872,6 +878,10 @@ export interface ChatMessage {
    *  ChatRunStatusResponse.resumable. */
   resumable?: boolean;
   lastRunEventId?: string;
+  /** Pages this run affected that were not visually verified. Informational:
+   *  prototype verification gates on the focused page alone, so the turn
+   *  succeeded and these are reported rather than enforced. */
+  prototypeQaAdvisory?: string[] | null;
   startedAt?: number;
   endedAt?: number;
   sessionMode?: ChatSessionMode;

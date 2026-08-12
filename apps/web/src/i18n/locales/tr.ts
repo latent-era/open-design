@@ -3454,6 +3454,7 @@ export const tr: Dict = {
   'assistant.role': 'Asistan',
   'assistant.workingLabel': 'Çalışıyor',
   'assistant.doneLabel': 'Bitti',
+  'assistant.prototypeQaAdvisory': '{count} ekran görsel olarak kontrol edilmedi',
   'assistant.copyMarkdown': 'Yanıt Markdown\'unu kopyala',
   'assistant.forkConversation': 'Buradan fork et',
   'assistant.forkingConversation': 'Fork ediliyor…',

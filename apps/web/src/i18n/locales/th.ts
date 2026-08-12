@@ -3454,6 +3454,7 @@ export const th: Dict = {
   'assistant.role': 'หน่วยผู้ช่วยเหลือส่วนตัว',
   'assistant.workingLabel': 'ดำเนินระบบรับทำงานอยู่',
   'assistant.doneLabel': 'บรรลุสู่ระดับพร้อมแล้ว',
+  'assistant.prototypeQaAdvisory': '{count} หน้าจอยังไม่ได้ตรวจสอบด้วยภาพ',
   'assistant.copyMarkdown': 'คัดลอก Markdown ของคำตอบ',
   'assistant.forkConversation': 'Fork จากตรงนี้',
   'assistant.forkingConversation': 'กำลัง fork…',

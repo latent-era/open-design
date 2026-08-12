@@ -1094,6 +1094,7 @@ function AssistantMessageImpl({
                   startedAt: message.startedAt,
                   endedAt: message.endedAt,
                   durationMs: usage?.durationMs,
+                  advisoryCount: message.prototypeQaAdvisory?.length ?? 0,
                 }}
               />
             ) : (
@@ -1115,6 +1116,7 @@ function AssistantMessageImpl({
                 startedAt={message.startedAt}
                 endedAt={message.endedAt}
                 durationMs={usage?.durationMs}
+                advisoryCount={message.prototypeQaAdvisory?.length ?? 0}
               />
             )}
           </div>
@@ -1565,6 +1567,10 @@ interface AssistantFooterProps {
   startedAt?: number;
   endedAt?: number;
   durationMs?: number;
+  // Pages the run affected that were not visually verified. Prototype
+  // verification gates on the focused page alone, so the turn succeeded and
+  // these are reported rather than enforced.
+  advisoryCount?: number;
 }
 
 function AssistantFooter({
@@ -1583,6 +1589,7 @@ function AssistantFooter({
   startedAt,
   endedAt,
   durationMs,
+  advisoryCount = 0,
 }: AssistantFooterProps) {
   const t = useT();
   // A turn without tool calls or thinking renders no execution disclosure, so
@@ -1625,6 +1632,11 @@ function AssistantFooter({
               : t("assistant.doneLabel")}
           </span>
           {elapsed ? <span className="assistant-elapsed">{elapsed}</span> : null}
+          {advisoryCount > 0 ? (
+            <span className="assistant-qa-advisory">
+              {t("assistant.prototypeQaAdvisory", { count: advisoryCount })}
+            </span>
+          ) : null}
         </>
       ) : null}
       {copyMarkdown || onFork || feedbackControls ? (

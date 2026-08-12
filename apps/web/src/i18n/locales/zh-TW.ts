@@ -3659,6 +3659,7 @@ export const zhTW: Dict = {
   "assistant.role": "助手",
   "assistant.workingLabel": "執行中",
   "assistant.doneLabel": "已完成",
+  "assistant.prototypeQaAdvisory": "{count} 個畫面未經視覺檢查",
   "assistant.copyMarkdown": "複製回覆 Markdown",
   "assistant.forkConversation": "從這裡分叉",
   "assistant.forkingConversation": "正在分叉…",

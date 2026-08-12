@@ -3454,6 +3454,7 @@ export const ptBR: Dict = {
   'assistant.role': 'Assistente',
   'assistant.workingLabel': 'Trabalhando',
   'assistant.doneLabel': 'Concluído',
+  'assistant.prototypeQaAdvisory': '{count} telas sem verificação visual',
   'assistant.copyMarkdown': 'Copiar Markdown da resposta',
   'assistant.forkConversation': 'Bifurcar daqui',
   'assistant.forkingConversation': 'Bifurcando…',

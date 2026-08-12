@@ -988,6 +988,12 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+/* Pages a run affected that were not visually verified. Quiet: the turn
+   succeeded, this is a note rather than a warning. */
+.assistant-qa-advisory {
+  color: var(--text-faint);
+  font-size: 11px;
+}
 
 .assistant-flow {
   display: flex;

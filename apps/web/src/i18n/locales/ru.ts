@@ -3454,6 +3454,7 @@ export const ru: Dict = {
   'assistant.role': 'Ассистент',
   'assistant.workingLabel': 'Работает',
   'assistant.doneLabel': 'Готово',
+  'assistant.prototypeQaAdvisory': '{count} экранов не проверены визуально',
   'assistant.copyMarkdown': 'Скопировать Markdown ответа',
   'assistant.forkConversation': 'Создать форк отсюда',
   'assistant.forkingConversation': 'Создание форка…',

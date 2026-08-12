@@ -3454,6 +3454,7 @@ export const fr: Dict = {
   'assistant.role': 'Assistant',
   'assistant.workingLabel': 'En cours',
   'assistant.doneLabel': 'Terminé',
+  'assistant.prototypeQaAdvisory': '{count} écrans non vérifiés visuellement',
   'assistant.copyMarkdown': 'Copier le Markdown de la réponse',
   'assistant.forkConversation': 'Créer un fork à partir d’ici',
   'assistant.forkingConversation': 'Création du fork…',
