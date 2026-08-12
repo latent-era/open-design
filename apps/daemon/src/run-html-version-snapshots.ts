@@ -7,7 +7,7 @@ import type {
   ProjectFileVersionPromptSource,
 } from '@open-design/contracts';
 
-import { ensureCurrentProjectFileVersion } from './project-file-versions.js';
+import { ensureCurrentProjectFileVersion, isVersionableFileName } from './project-file-versions.js';
 import { OPEN_DESIGN_PLUGIN_ID } from './mcp-observability.js';
 import type { RunArtifactDiff } from './run-artifact-fs.js';
 
@@ -87,7 +87,7 @@ export async function snapshotAiHtmlVersionsForRun(
   }
   const seen = new Set<string>();
   const work = input.diff.touchedPaths.flatMap((filePath) => {
-    if (!/\.html?$/i.test(filePath)) return [];
+    if (!isVersionableFileName(filePath)) return [];
     const relativePath = path.relative(input.projectRoot, filePath);
     if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) return [];
     const projectRelPath = relativePath.split(path.sep).join('/');

@@ -12,6 +12,23 @@ import path from 'node:path';
 
 import { isSafeId, kindFor, mimeFor, resolveProjectDir, validateProjectPath } from './projects.js';
 
+/** Text sources this project versions, and therefore can restore.
+ *
+ *  Previously HTML only, which meant an edit to a shared stylesheet produced no
+ *  version and could never be undone — the single most common kind of visual
+ *  tweak was the one kind that was unrecoverable.
+ *
+ *  An allowlist rather than a denylist: the cost of wrongly listing a type here
+ *  is one unnecessary version, while the cost of wrongly omitting one is an
+ *  edit a user cannot get back. Binary and generated files stay out. */
+export const VERSIONABLE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.html', '.htm', '.css', '.js', '.mjs', '.json', '.md', '.svg',
+]);
+
+export function isVersionableFileName(fileName: string): boolean {
+  return VERSIONABLE_FILE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
+}
+
 const VERSION_ROOT = '.file-versions';
 const VERSION_MANIFEST = 'manifest.json';
 const VERSION_ID_RE = /^[A-Za-z0-9_-]+$/u;
@@ -567,7 +584,7 @@ export async function markProjectFileVersionStoreDeleted(
   metadata?: unknown,
 ): Promise<void> {
   const safeName = validateUserFileName(fileName);
-  if (!/\.html?$/i.test(safeName)) return;
+  if (!isVersionableFileName(safeName)) return;
   assertProjectAvailable(projectsRoot, projectId, metadata);
   await withVersionFileLock(projectsRoot, projectId, safeName, async () => {
     const state = await readVersionManifestState(projectsRoot, projectId, safeName);
@@ -670,7 +687,7 @@ export async function ensureCurrentProjectFileVersion(
   metadata?: unknown,
 ): Promise<ProjectFileVersion | null> {
   const safeName = validateUserFileName(fileName);
-  if (!/\.html?$/i.test(safeName)) return null;
+  if (!isVersionableFileName(safeName)) return null;
   assertProjectAvailable(projectsRoot, projectId, metadata);
   return withVersionFileLock(projectsRoot, projectId, safeName, () =>
     ensureCurrentProjectFileVersionUnlocked(projectsRoot, projectId, safeName, content, options),
@@ -684,7 +701,7 @@ async function ensureCurrentProjectFileVersionUnlocked(
   content: string,
   options: CreateProjectFileVersionOptions,
 ): Promise<ProjectFileVersion | null> {
-  if (!/\.html?$/i.test(safeName)) return null;
+  if (!isVersionableFileName(safeName)) return null;
   const text = String(content ?? '');
   const state = await readVersionManifestState(projectsRoot, projectId, safeName);
   if (!state.deletedAt) {
@@ -727,7 +744,7 @@ export async function resolveProjectFileVersionContentMatch(
   metadata?: unknown,
 ): Promise<ProjectFileVersionContentMatch> {
   const safeName = validateUserFileName(fileName);
-  if (!/\.html?$/i.test(safeName)) {
+  if (!isVersionableFileName(safeName)) {
     return { status: 'missing_version', version: null };
   }
   assertProjectAvailable(projectsRoot, projectId, metadata);
