@@ -13,6 +13,26 @@ if (args[0] === 'models') {
   process.exit(0);
 }
 
+// Switching the host between Qwen and DeepSeek unloads one ~80GB model and
+// loads the other, so it may only ever happen for an invocation that is about
+// to actually run inference.
+//
+// The daemon spawns this wrapper for much more than chat turns. Detection also
+// probes each agent's version (`--version`), model catalogue (`models`), and
+// advertised capability flags — and for the Talos profiles those help args are
+// inherited from the opencode adapter as `run --help`
+// (apps/daemon/src/runtimes/opencode-permissions.ts), with the profile's own
+// TALOS_LLM_MODE in the probe environment. Detection is uncached and probes
+// both Talos profiles concurrently, so it fired a `chat` and a `coding` switch
+// against each other on daemon startup, on every /api/agents call, and around
+// chat runs — silently moving the host off whatever model the user selected.
+//
+// Enumerating the harmless invocations instead is what failed: that denylist
+// stopped holding the moment the daemon grew a probe shape it did not list.
+function isInferenceRun(argv) {
+  return argv[0] === 'run' && !argv.includes('--help') && !argv.includes('-h');
+}
+
 function isRuntimeReadyForMode(status, targetMode) {
   if (!status || typeof status !== 'object') return false;
   return targetMode === 'chat'
@@ -21,7 +41,7 @@ function isRuntimeReadyForMode(status, targetMode) {
 }
 
 async function selectRuntime() {
-  if (args.includes('--version') || !mode) return;
+  if (!mode || !isInferenceRun(args)) return;
   const baseUrl = String(process.env.LOCAL_LLM_CONTROL_URL || '').replace(/\/+$/u, '');
   const token = String(process.env.LOCAL_LLM_CONTROL_TOKEN || '');
   if (!baseUrl || !token) throw new Error('Talos local runtime control is not configured');

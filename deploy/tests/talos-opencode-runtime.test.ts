@@ -116,6 +116,42 @@ test('talos-opencode-runtime: activates the runtime when the target model is not
   );
 });
 
+test('talos-opencode-runtime: capability probes never trigger a model switch', async () => {
+  await withMockController(
+    { qwen_active: true, qwen_status_active: true, ds4_active: false, game_running: false },
+    null,
+    async ({ baseUrl, modeCalls }) => {
+      // Regression: the daemon probes each agent's `helpArgs` to sniff which
+      // optional flags the installed CLI advertises. For the Talos profiles
+      // those args are inherited from the opencode adapter — `run --help`
+      // (apps/daemon/src/runtimes/opencode-permissions.ts) — and the probe
+      // env carries the profile's own TALOS_LLM_MODE. Detection is uncached
+      // and runs on daemon startup, on /api/agents, and around chat runs,
+      // probing BOTH Talos profiles concurrently, so every trigger fired one
+      // `mode=chat` and one `mode=coding` switch with no user action at all.
+      // That is what silently moved the host off the model the user picked.
+      await runWrapper(baseUrl, 'coding', ['run', '--help']);
+      assert.deepEqual(modeCalls, []);
+    },
+  );
+});
+
+test('talos-opencode-runtime: non-inference subcommands never trigger a model switch', async () => {
+  await withMockController(
+    { qwen_active: true, qwen_status_active: true, ds4_active: false, game_running: false },
+    null,
+    async ({ baseUrl, modeCalls }) => {
+      // The previous guard was a denylist of known-harmless invocations, so it
+      // broke silently the first time the daemon grew a probe shape it did not
+      // enumerate. Only an actual inference run may move the host.
+      for (const args of [['--help'], ['auth', 'list'], ['models'], ['--version'], []]) {
+        await runWrapper(baseUrl, 'coding', args);
+      }
+      assert.deepEqual(modeCalls, []);
+    },
+  );
+});
+
 test('talos-opencode-runtime: surfaces a clear error when activation fails', async () => {
   await withMockController(
     { qwen_active: true, qwen_status_active: true, ds4_active: false, game_running: false },
