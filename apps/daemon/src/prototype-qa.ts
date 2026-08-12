@@ -371,3 +371,29 @@ export function validatePrototypeQaReceipts(input: {
   }
   return failures;
 }
+
+/** Split the pages a run affected into the one that gates the turn and the rest.
+ *
+ *  Editing a shared stylesheet marks every page in the project as affected. It
+ *  is right to report that and wrong to fail a turn on it: the edit succeeded,
+ *  only the verification is outstanding, and a two-declaration CSS tweak was
+ *  carrying the most expensive verification in the product.
+ *
+ *  Exactly one page gates — the one the user has open — so a completed turn
+ *  still carries real evidence rather than none. When no page is in focus
+ *  nothing blocks; failing against an arbitrarily chosen page would be worse
+ *  than reporting. */
+export function partitionPrototypeQaFiles(input: {
+  htmlFiles: string[];
+  focusedFile: string | null;
+}): { blocking: string[]; advisory: string[] } {
+  const focused = input.focusedFile ? normalizeRelpath(input.focusedFile) : null;
+  const files = input.htmlFiles.map((file) => normalizeRelpath(file));
+  if (!focused || !files.includes(focused)) {
+    return { blocking: [], advisory: files };
+  }
+  return {
+    blocking: [focused],
+    advisory: files.filter((file) => file !== focused),
+  };
+}

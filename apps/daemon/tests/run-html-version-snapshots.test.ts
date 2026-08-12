@@ -109,6 +109,9 @@ describe('AI HTML version snapshots', () => {
     expect(result.snapshots).toEqual([
       {
         fileName: 'index.html',
+        // This run created the file's first version, so there is no prior one
+        // to restore to. Undo reads this field.
+        previousVersionId: null,
         version: expect.objectContaining({
           id: versions[0]?.id,
           current: true,

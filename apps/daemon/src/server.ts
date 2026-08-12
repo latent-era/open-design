@@ -85,7 +85,7 @@ import {
   isBrowserUseRequested,
   renderBrowserUseUnavailablePrompt,
 } from './browser/index.js';
-import { listProjectHtmlFiles, validatePrototypeQaReceipts } from './prototype-qa.js';
+import { listProjectHtmlFiles, partitionPrototypeQaFiles, validatePrototypeQaReceipts } from './prototype-qa.js';
 import {
   UPLOAD_DIR,
   composeLiveInstructionPrompt,
@@ -9587,9 +9587,24 @@ export async function startServer({
           return latest;
         }
       }, 0);
+      // Exactly one page gates the turn. Touching a shared stylesheet marks
+      // every page as affected, and demanding a fresh audit for all of them
+      // failed turns whose edits had succeeded — the cheapest possible change
+      // carried the most expensive verification.
+      const editedHtml = changedHtml.length === 1 ? changedHtml[0] : null;
+      const configuredEntryFile =
+        typeof projectRecord?.metadata?.entryFile === 'string'
+          ? projectRecord.metadata.entryFile.replaceAll('\\', '/')
+          : null;
+      const { blocking, advisory } = partitionPrototypeQaFiles({
+        htmlFiles: [...new Set(htmlFiles)],
+        focusedFile: editedHtml ?? configuredEntryFile ?? null,
+      });
+      run.prototypeQaAdvisory = advisory;
+      if (blocking.length === 0) return [];
       return validatePrototypeQaReceipts({
         projectRoot: outcome.projectRoot,
-        htmlFiles: [...new Set(htmlFiles)],
+        htmlFiles: blocking,
         ...(modifiedAfterMs > 0 ? { modifiedAfterMs } : {}),
       });
     };

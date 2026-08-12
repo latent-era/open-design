@@ -323,6 +323,10 @@ interface ChatRun {
     | 'invalid_origin'
     | 'unknown';
   artifactVersionId?: string;
+  /** Pages this run affected that were not visually verified. Informational —
+   *  only the focused page gates the turn, so these are reported rather than
+   *  enforced. */
+  prototypeQaAdvisory?: string[];
   deliverableValid?: boolean;
   deliverableValidation?: ChatRunStatusResponse['deliverableValidation'];
   deliverableEntryFile?: string;
