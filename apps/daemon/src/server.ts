@@ -13214,20 +13214,11 @@ export async function startServer({
         publishNativeSessionRecoveryMetadata();
       }
       if (status === 'succeeded') {
-        const qaFailures = prototypeQaFailuresBeforeSuccess();
-        if (qaFailures.length > 0) {
-          const summary = qaFailures
-            .slice(0, 8)
-            .map(({ file, reason }) => `${file} (${reason})`)
-            .join(', ');
-          send('error', createSseErrorPayload(
-            'PROTOTYPE_QA_REQUIRED',
-            `Visual prototype verification is incomplete: ${summary}. Run the managed preview audit for each affected HTML page and fix every reported issue before completing the turn.`,
-            { retryable: true, details: { failures: qaFailures } },
-          ));
-          design.runs.finish(run, 'failed', 1, signal);
-          return;
-        }
+        // File versions describe what is on disk. The agent's edits are already
+        // written by this point, so they get history whether or not
+        // verification completed — otherwise a run that fails the QA gate below
+        // returns before ever snapshotting, and the runs most worth undoing are
+        // exactly the ones left with no undo point.
         try {
           await snapshotAiHtmlVersionsBeforeSuccess();
         } catch (err) {
@@ -13242,6 +13233,20 @@ export async function startServer({
               retryable: false,
               ...(details ? { details } : {}),
             },
+          ));
+          design.runs.finish(run, 'failed', 1, signal);
+          return;
+        }
+        const qaFailures = prototypeQaFailuresBeforeSuccess();
+        if (qaFailures.length > 0) {
+          const summary = qaFailures
+            .slice(0, 8)
+            .map(({ file, reason }) => `${file} (${reason})`)
+            .join(', ');
+          send('error', createSseErrorPayload(
+            'PROTOTYPE_QA_REQUIRED',
+            `Visual prototype verification is incomplete: ${summary}. Run the managed preview audit for each affected HTML page and fix every reported issue before completing the turn.`,
+            { retryable: true, details: { failures: qaFailures } },
           ));
           design.runs.finish(run, 'failed', 1, signal);
           return;
