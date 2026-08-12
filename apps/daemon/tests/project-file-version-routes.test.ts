@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { getProjectFileVersionRootStats } from '../src/project-file-versions.js';
 import { projectFileWriteTestHooks } from '../src/projects.js';
-import { snapshotAiHtmlVersionsForRun } from '../src/run-html-version-snapshots.js';
+import { snapshotAiHtmlVersionsForRun } from '../src/run-file-version-snapshots.js';
 import { startServer } from '../src/server.js';
 
 describe('project file version routes', () => {

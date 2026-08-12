@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { snapshotAiHtmlVersionsForRun } from '../src/run-html-version-snapshots.js';
+import { snapshotAiHtmlVersionsForRun } from '../src/run-file-version-snapshots.js';
 
 const dirs: string[] = [];
 

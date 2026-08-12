@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   artifactOriginForRun,
   snapshotAiHtmlVersionsForRun,
-} from '../src/run-html-version-snapshots.js';
+} from '../src/run-file-version-snapshots.js';
 import { listProjectFileVersions } from '../src/project-file-versions.js';
 
 describe('AI HTML version snapshots', () => {

@@ -478,7 +478,7 @@ import {
   AiHtmlVersionSnapshotError,
   artifactOriginForRun,
   snapshotAiHtmlVersionsForRun,
-} from './run-html-version-snapshots.js';
+} from './run-file-version-snapshots.js';
 import { reportRunCompletedFromDaemon } from './langfuse-bridge.js';
 import { reconcileDurableRunTerminals } from './runtimes/run-terminal-reconciliation.js';
 import { buildPromptStackTelemetry } from './prompt-telemetry.js';
