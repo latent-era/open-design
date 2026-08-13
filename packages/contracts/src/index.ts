@@ -48,6 +48,7 @@ export * from './api/workspaces.js';
 export * from './api/workspace-invites.js';
 export * from './examples.js';
 export * from './execution-profile.js';
+export * from './models/context-window.js';
 export * from './artifacts/od-card.js';
 export * from './runtime/deck-stage-fallback.js';
 export * from './runtime/preview-observability.js';
