@@ -1,5 +1,9 @@
 import type { Express } from 'express';
-import { type ChatSessionMode } from '@open-design/contracts';
+import {
+  compactionSeedMessage,
+  EmptyHandoffError,
+  type ChatSessionMode,
+} from '@open-design/contracts';
 import { readAnalyticsContext } from '../../analytics.js';
 import { backfillBrandExtractionTranscriptForProject } from '../../brands/index.js';
 import type { RouteDeps } from '../../server-context.js';
@@ -210,6 +214,62 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
       }
     }
     res.json({ conversation: conv });
+  });
+
+  /**
+   * Compact a conversation: continue it in a fresh conversation seeded with a
+   * handoff, so the context window resets without losing what was learned.
+   *
+   * The handoff is produced by asking the agent for one (see
+   * CONTEXT_CLEAR_PROMPT) and is passed in here. The model call goes through
+   * the normal chat path rather than being duplicated inside this endpoint —
+   * that is where agent selection, streaming, and cancellation already live.
+   *
+   * The source conversation is left intact. Compaction that destroyed it would
+   * make a bad handoff unrecoverable.
+   */
+  app.post('/api/projects/:id/conversations/:cid/compact', async (req, res) => {
+    if (!getProject(db, req.params.id)) {
+      return res.status(404).json({ error: 'project not found' });
+    }
+    if (!await authorizeProjectRequest(
+      req,
+      res,
+      req.params.id,
+      { mode: 'write', capability: 'writeFiles' },
+    )) return;
+    const source = getRoutableConversation(req.params.id, req.params.cid);
+    if (!source) {
+      return res.status(404).json({ error: 'conversation not found' });
+    }
+    const handoff = typeof req.body?.handoff === 'string' ? req.body.handoff : '';
+    let seed: string;
+    try {
+      seed = compactionSeedMessage(handoff);
+    } catch (err) {
+      if (err instanceof EmptyHandoffError) {
+        return sendApiError(res, 400, err.code, err.message);
+      }
+      throw err;
+    }
+    const now = Date.now();
+    const conv = insertConversation(db, {
+      id: randomId(),
+      projectId: req.params.id,
+      title: source.title ? `${source.title} (continued)` : null,
+      sessionMode: normalizeChatSessionMode(source.sessionMode),
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (!conv) {
+      return sendApiError(res, 500, 'COMPACT_FAILED', 'could not create the continuing conversation');
+    }
+    upsertMessage(db, conv.id, {
+      id: randomId(),
+      role: 'user',
+      content: seed,
+    });
+    res.json({ conversation: conv, compactedFrom: source.id });
   });
 
   app.patch('/api/projects/:id/conversations/:cid', async (req, res) => {

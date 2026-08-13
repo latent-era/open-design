@@ -120,6 +120,8 @@ import { playSound, showCompletionNotification } from '../utils/notifications';
 import { randomUUID } from '../utils/uuid';
 import { DEFAULT_NOTIFICATIONS, KNOWN_PROVIDERS } from '../state/config';
 import type { TodoItem } from '../runtime/todos';
+import { latestHandoff } from '../runtime/context-meter';
+import { CONTEXT_CLEAR_PROMPT } from '@open-design/contracts';
 import type {
   AmrAuthRetryContinuation,
   AmrAuthRetryPersonalAdoptionWitness,
@@ -8310,6 +8312,48 @@ export function ProjectView({
     messagesInitialized,
   ]);
 
+  const [compactingContext, setCompactingContext] = useState(false);
+  /**
+   * Compaction, in two visible steps.
+   *
+   * First click asks the agent for a handoff, which lands in the chat where
+   * the user can read it. Second click continues into a fresh conversation
+   * seeded with it. Resetting the context automatically would swap the
+   * conversation before anyone could tell whether the handoff was any good.
+   */
+  const handleCompactContext = useCallback(async () => {
+    if (!activeConversationId || compactingContext) return;
+    const handoff = latestHandoff(messages);
+    if (!handoff) {
+      void handleSend(CONTEXT_CLEAR_PROMPT, []);
+      return;
+    }
+    setCompactingContext(true);
+    try {
+      const resp = await fetch(
+        `/api/projects/${encodeURIComponent(project.id)}/conversations/${encodeURIComponent(activeConversationId)}/compact`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ handoff }),
+        },
+      );
+      if (!resp.ok) return;
+      const body = (await resp.json()) as { conversation?: { id?: string } };
+      const nextId = body.conversation?.id;
+      if (nextId) setActiveConversationId(nextId);
+    } finally {
+      setCompactingContext(false);
+    }
+  }, [
+    activeConversationId,
+    compactingContext,
+    messages,
+    handleSend,
+    project.id,
+    setActiveConversationId,
+  ]);
+
   const handleSendBoardCommentAttachments = useCallback(
     async (
       commentAttachments: ChatCommentAttachment[],
@@ -10719,6 +10763,8 @@ export function ProjectView({
               // resets internal scroll/draft state inside ChatPane and ChatComposer.
               key={`${project.id}:${activeConversationId ?? 'conversation-unavailable'}:${chatSeed?.id ?? 'ready'}`}
               messages={messages}
+              onCompactContext={handleCompactContext}
+              compactingContext={compactingContext}
               streaming={currentConversationControlStreaming}
               liveToolInput={liveToolInput}
               loading={currentConversationLoading}

@@ -245,6 +245,9 @@ const PROJECT_RESOURCE_STRING_FLAGS = new Set([
   ...PROJECT_STRING_FLAGS,
   'workspace',
   'workspace-member',
+  // Inline handoff text for `od conversation compact`; --prompt-file is the
+  // alternative for anything longer than a shell argument comfortably holds.
+  'handoff',
 ]);
 // `yes` gates `od files undo`, which rewinds the project past a message and
 // discards every later change. Reporting the plan is the default; writing is
@@ -8279,6 +8282,11 @@ async function runConversation(args) {
                                            source message.
   od conversation list <projectId>           List conversations in a project.
   od conversation info <conversationId>      Print one conversation.
+  od conversation compact <projectId> <conversationId>
+                                           Continue a conversation in a fresh one
+                                           seeded with a handoff, resetting the
+                                           context window. Reads the handoff from
+                                           --handoff or --prompt-file <path|->.
 
 Common options:
   --daemon-url <url>         Open Design daemon HTTP base.
@@ -8290,7 +8298,7 @@ Common options:
   const sub = args[0];
   const rest = args.slice(1);
   const conversationStringFlags =
-    sub === 'new' || sub === 'list'
+    sub === 'new' || sub === 'list' || sub === 'compact'
       ? PROJECT_RESOURCE_STRING_FLAGS
       : PROJECT_STRING_FLAGS;
   const flags = parseFlags(rest, {
@@ -8359,6 +8367,37 @@ Common options:
       if (!resp.ok) return structuredHttpFailure(resp);
       const data = await resp.json();
       process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      return;
+    }
+    case 'compact': {
+      const positional = positionalArgs(rest, PROJECT_RESOURCE_STRING_FLAGS);
+      const [projectId, conversationId] = positional;
+      if (!projectId || !conversationId) {
+        console.error('Usage: od conversation compact <projectId> <conversationId> [--handoff <text> | --prompt-file <path|->] [--json]');
+        process.exit(2);
+      }
+      // The handoff is written by the agent (see CONTEXT_CLEAR_PROMPT) and
+      // passed in, so the same text can be reviewed before it becomes the
+      // seed of the continuing conversation.
+      const handoff = typeof flags.handoff === 'string' && flags.handoff.trim()
+        ? flags.handoff
+        : await readPromptFromFlags(flags);
+      if (!handoff || !handoff.trim()) {
+        console.error('od conversation compact needs a handoff: pass --handoff <text> or --prompt-file <path|->');
+        process.exit(2);
+      }
+      const resp = await fetch(
+        `${base}/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/compact`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...workspaceHeaders },
+          body: JSON.stringify({ handoff }),
+        },
+      );
+      if (!resp.ok) return structuredHttpFailure(resp, 'project-not-found');
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`[conversation] compacted ${conversationId} into ${data?.conversation?.id ?? '-'}`);
       return;
     }
     default:

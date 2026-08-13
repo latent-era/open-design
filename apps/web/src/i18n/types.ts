@@ -4333,6 +4333,11 @@ export interface Dict {
   'assistant.undoing': string;
   'assistant.undoConfirm': string;
   'assistant.undoConfirmLater': string;
+  'contextMeter.usage': string;
+  'contextMeter.compact': string;
+  'contextMeter.compacting': string;
+  'contextMeter.over': string;
+  'contextMeter.continue': string;
   'assistant.shareToOpenDesign': string;
   'assistant.shareToOpenDesignBusy': string;
   'assistant.feedbackPrompt': string;

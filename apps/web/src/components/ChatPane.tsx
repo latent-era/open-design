@@ -114,6 +114,8 @@ import { UserActionCard, type UserActionCardTone } from './UserActionCard';
 import { repoConnectCopy } from './design-system-github-evidence';
 import { isRenderableSketchJson, SketchPreview } from './SketchPreview';
 import type { SettingsSection } from './SettingsDialog';
+import { ContextMeter } from './ContextMeter';
+import { compactionStage, conversationContextUsage } from '../runtime/context-meter';
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
@@ -766,6 +768,10 @@ interface Props {
   projectHeader?: ReactNode;
   designSystemPicker?: ReactNode;
   config?: AppConfig;
+  /** Start a compaction of the current conversation. Absent when the surface
+   *  cannot compact, in which case the meter reports without offering it. */
+  onCompactContext?: () => void;
+  compactingContext?: boolean;
 }
 
 const AMR_PROFILE_ENV_KEY = 'OPEN_DESIGN_AMR_PROFILE';
@@ -995,6 +1001,8 @@ export function ChatPane({
   projectHeader,
   designSystemPicker,
   config,
+  onCompactContext,
+  compactingContext,
 }: Props) {
   const { workspaceContext } = useProjectCollabContext();
   const t = useT();
@@ -1014,8 +1022,13 @@ export function ChatPane({
   const composerRef = useRef<ChatComposerHandle | null>(null);
   const composerSlotRef = useRef<HTMLDivElement | null>(null);
   const composerLayerRef = useRef<HTMLDivElement | null>(null);
+  const contextUsageForConversation = useMemo(
+    () => conversationContextUsage(displayMessages, config),
+    [displayMessages, config],
+  );
   const pinnedTodoRef = useRef<HTMLDivElement | null>(null);
   const queuedSendStripRef = useRef<HTMLDivElement | null>(null);
+  const contextMeterRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   const runFailedToastSurfaceKeysRef = useRef<Set<string>>(new Set());
   const runRecoverySurfaceKeysRef = useRef<Set<string>>(new Set());
@@ -2082,6 +2095,7 @@ export function ChatPane({
 
     let observedPinnedTodo: Element | null = null;
     let observedQueuedSendStrip: Element | null = null;
+    let observedContextMeter: Element | null = null;
     const syncPinnedTodo = () => {
       if (!resizeObserver) return;
       const pinnedEl = pinnedTodoRef.current;
@@ -2109,9 +2123,23 @@ export function ChatPane({
       }
     };
 
+    const syncContextMeter = () => {
+      if (!resizeObserver) return;
+      const meterEl = contextMeterRef.current;
+      if (meterEl && observedContextMeter !== meterEl) {
+        if (observedContextMeter) resizeObserver.unobserve(observedContextMeter);
+        resizeObserver.observe(meterEl);
+        observedContextMeter = meterEl;
+      } else if (!meterEl && observedContextMeter) {
+        resizeObserver.unobserve(observedContextMeter);
+        observedContextMeter = null;
+      }
+    };
+
     syncObservedChildren();
     syncPinnedTodo();
     syncQueuedSendStrip();
+    syncContextMeter();
 
     const mutationObserver =
       typeof MutationObserver !== 'undefined'
@@ -2119,6 +2147,7 @@ export function ChatPane({
             syncObservedChildren();
             syncPinnedTodo();
             syncQueuedSendStrip();
+            syncContextMeter();
             followLatestIfPinned();
           })
         : null;
@@ -2987,6 +3016,21 @@ export function ChatPane({
               <Icon name="arrow-up" size={14} style={{ transform: 'rotate(180deg)' }} />
               <span>{t('chat.jumpToLatest')}</span>
             </button>
+          </div>
+          <div ref={contextMeterRef}>
+            <ContextMeter
+              usage={contextUsageForConversation}
+              {...(onCompactContext ? { onCompact: onCompactContext } : {})}
+              compacting={compactingContext}
+            />
+          </div>
+          <div ref={contextMeterRef}>
+            <ContextMeter
+              usage={contextUsageForConversation}
+              {...(onCompactContext ? { onCompact: onCompactContext } : {})}
+              compacting={compactingContext ?? false}
+              stage={compactionStage(displayMessages)}
+            />
           </div>
           <PinnedTodoSlot
             messages={displayMessages}
