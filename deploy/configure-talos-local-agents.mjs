@@ -34,9 +34,21 @@ const openCodeConfig = {
         baseURL: `${qwenBaseUrl}/v1`,
         apiKey: 'local-runtime',
       },
+      // OpenCode compacts a conversation as it approaches `limit.context`.
+      // Without the limit declared it has nothing to compare against, so it
+      // appends turns until llama-server rejects the request outright and the
+      // run dies mid-conversation with no recovery.
+      //
+      // These are the real per-conversation ceilings, not the servers' totals:
+      // llama-swap runs each Qwen with `-c 196608`, and llama.cpp splits that
+      // pool across `--parallel` slots. Keep them in step with
+      // ~/llama-swap/config.yaml — a limit larger than the server's is worse
+      // than none, because it promises room that does not exist.
       models: {
-        'qwen3.6-27b': { name: 'Qwen 3.6 27B' },
-        'qwen3.6-35b': { name: 'Qwen 3.6 35B' },
+        // -c 196608 / --parallel 2
+        'qwen3.6-27b': { name: 'Qwen 3.6 27B', limit: { context: 98304, output: 8192 } },
+        // -c 196608 / --parallel 3
+        'qwen3.6-35b': { name: 'Qwen 3.6 35B', limit: { context: 65536, output: 8192 } },
       },
     },
     deepseek_local: {
@@ -47,7 +59,11 @@ const openCodeConfig = {
         apiKey: 'local-runtime',
       },
       models: {
-        'deepseek-v4-flash-0731-q2': { name: 'DeepSeek V4 Flash 0731 Q2' },
+        // ds4-server --ctx 262144, single sequence
+        'deepseek-v4-flash-0731-q2': {
+          name: 'DeepSeek V4 Flash 0731 Q2',
+          limit: { context: 262144, output: 8192 },
+        },
       },
     },
   },
