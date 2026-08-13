@@ -193,6 +193,50 @@ describe('message undo routes', () => {
     expect(second.status).toBe(409);
   });
 
+  it('serializes the undo state to the client that renders the control', async () => {
+    // The seam between the daemon recording versions and the web control
+    // rendering: the message payload has to actually carry fileVersions. Each
+    // side was covered in isolation; without this, the field could silently
+    // fail to serialize and the button would simply never appear while every
+    // other test still passed.
+    const projectId = await createProject();
+    await writeFile(projectId, 'd.css', 'one');
+    const before = await captureVersion(projectId, 'd.css');
+    await writeFile(projectId, 'd.css', 'two');
+    const after = await captureVersion(projectId, 'd.css');
+
+    const conversationId = `conv-${randomUUID()}`;
+    const messageId = `msg-${randomUUID()}`;
+    seedMessage(conversationId, projectId, messageId, [
+      { fileName: 'd.css', versionId: after, previousVersionId: before },
+    ]);
+
+    const resp = await fetch(
+      `${baseUrl}/api/projects/${projectId}/conversations/${conversationId}/messages`,
+    );
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as {
+      messages: Array<{ id: string; fileVersions?: unknown[]; undoneAt?: number }>;
+    };
+    const seeded = body.messages.find((m) => m.id === messageId);
+    expect(seeded?.fileVersions).toEqual([
+      { fileName: 'd.css', versionId: after, previousVersionId: before },
+    ]);
+    expect(seeded?.undoneAt).toBeUndefined();
+
+    // And after a rewind the same payload marks it spent.
+    await fetch(`${baseUrl}/api/projects/${projectId}/messages/${messageId}/undo`, {
+      method: 'POST',
+    });
+    const after2 = await fetch(
+      `${baseUrl}/api/projects/${projectId}/conversations/${conversationId}/messages`,
+    );
+    const body2 = (await after2.json()) as {
+      messages: Array<{ id: string; undoneAt?: number }>;
+    };
+    expect(body2.messages.find((m) => m.id === messageId)?.undoneAt).toBeGreaterThan(0);
+  });
+
   it('404s for a message that does not exist', async () => {
     const projectId = await createProject();
     const response = await fetch(
