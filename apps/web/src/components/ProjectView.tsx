@@ -5321,6 +5321,10 @@ export function ProjectView({
                     content: replayedContent,
                     producedFiles: produced,
                     traceObjectFiles,
+                    // Carries the run's recorded versions onto the message it
+                    // is persisted with. Without this the undo control has no
+                    // versions to find and never renders.
+                    ...(status.fileVersions ? { fileVersions: status.fileVersions } : {}),
                   },
                   deliveryOutcome,
                   artifactPersistenceError,
