@@ -391,6 +391,9 @@ interface Props {
   questionFormSubmitDisabled?: boolean;
   onContinueRemainingTasks?: (todos: TodoItem[]) => void;
   onForkFromMessage?: () => void;
+  /** Called after a turn's changes are rewound, so the caller can refetch the
+   *  conversation and the file tree. */
+  onMessageUndone?: () => void;
   forking?: boolean;
   onFeedback?: (change: ChatMessageFeedbackChange) => void;
   suppressDirectionForms?: boolean;
@@ -524,6 +527,7 @@ function AssistantMessageImpl({
   questionFormSubmitDisabled = false,
   onContinueRemainingTasks,
   onForkFromMessage,
+  onMessageUndone,
   forking = false,
   onFeedback,
   suppressDirectionForms = false,
@@ -1095,6 +1099,10 @@ function AssistantMessageImpl({
                   endedAt: message.endedAt,
                   durationMs: usage?.durationMs,
                   advisoryCount: message.prototypeQaAdvisory?.length ?? 0,
+                  undoProjectId: projectId,
+                  undoMessageId: message.id,
+                  canUndo: (message.fileVersions?.length ?? 0) > 0 && !message.undoneAt,
+                  onUndone: onMessageUndone,
                 }}
               />
             ) : (
@@ -1117,6 +1125,10 @@ function AssistantMessageImpl({
                 endedAt={message.endedAt}
                 durationMs={usage?.durationMs}
                 advisoryCount={message.prototypeQaAdvisory?.length ?? 0}
+                undoProjectId={projectId}
+                undoMessageId={message.id}
+                canUndo={(message.fileVersions?.length ?? 0) > 0 && !message.undoneAt}
+                onUndone={onMessageUndone}
               />
             )}
           </div>
@@ -1571,6 +1583,13 @@ interface AssistantFooterProps {
   // verification gates on the focused page alone, so the turn succeeded and
   // these are reported rather than enforced.
   advisoryCount?: number;
+  // Undo is offered only when this turn actually versioned files and has not
+  // already been rewound. Both come from the run's recorded versions, so a
+  // prose-only turn shows no control at all.
+  undoProjectId?: string | null;
+  undoMessageId?: string;
+  canUndo?: boolean;
+  onUndone?: () => void;
 }
 
 function AssistantFooter({
@@ -1590,6 +1609,10 @@ function AssistantFooter({
   endedAt,
   durationMs,
   advisoryCount = 0,
+  undoProjectId = null,
+  undoMessageId,
+  canUndo = false,
+  onUndone,
 }: AssistantFooterProps) {
   const t = useT();
   // A turn without tool calls or thinking renders no execution disclosure, so
@@ -1639,9 +1662,16 @@ function AssistantFooter({
           ) : null}
         </>
       ) : null}
-      {copyMarkdown || onFork || feedbackControls ? (
+      {copyMarkdown || onFork || feedbackControls || (canUndo && undoProjectId && undoMessageId) ? (
         <span className="assistant-footer-controls">
           {copyMarkdown ? <AssistantMarkdownCopyButton markdown={copyMarkdown} /> : null}
+          {canUndo && undoProjectId && undoMessageId ? (
+            <AssistantUndoButton
+              projectId={undoProjectId}
+              messageId={undoMessageId}
+              onUndone={onUndone}
+            />
+          ) : null}
           {onFork ? (
             <AssistantForkButton
               disabled={forking}
@@ -1679,6 +1709,70 @@ function AssistantForkButton({
       title={label}
     >
       <Icon name={disabled ? "spinner" : "fork"} size={13} />
+    </button>
+  );
+}
+
+/**
+ * Timeline-rewind undo for one turn.
+ *
+ * The plan is fetched before the confirmation rather than assembled from what
+ * the client happens to know, so the prompt names exactly what the daemon will
+ * discard — including changes made by later turns, which is the part a user
+ * would not otherwise expect to lose.
+ */
+function AssistantUndoButton({
+  projectId,
+  messageId,
+  onUndone,
+}: {
+  projectId: string;
+  messageId: string;
+  onUndone?: () => void;
+}) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+
+  async function handleUndo() {
+    if (busy) return;
+    const base = `/api/projects/${encodeURIComponent(projectId)}/messages/${encodeURIComponent(messageId)}/undo`;
+    let plan: { restores: unknown[]; deletes: unknown[]; discardedMessageIds: string[] };
+    try {
+      const preview = await fetch(base);
+      if (!preview.ok) return;
+      plan = await preview.json();
+    } catch {
+      return;
+    }
+    const files = plan.restores.length + plan.deletes.length;
+    const later = plan.discardedMessageIds.length;
+    const message = later > 0
+      ? t("assistant.undoConfirmLater", { files: String(files), later: String(later) })
+      : t("assistant.undoConfirm", { files: String(files) });
+    if (!window.confirm(message)) return;
+    setBusy(true);
+    try {
+      const applied = await fetch(base, { method: "POST" });
+      if (applied.ok) onUndone?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const label = busy ? t("assistant.undoing") : t("assistant.undoChange");
+  return (
+    <button
+      type="button"
+      className="assistant-copy-button od-tooltip"
+      disabled={busy}
+      data-testid="assistant-undo-button"
+      data-tooltip={label}
+      data-tooltip-placement="top"
+      onClick={handleUndo}
+      aria-label={label}
+      title={label}
+    >
+      <Icon name={busy ? "spinner" : "undo"} size={13} />
     </button>
   );
 }

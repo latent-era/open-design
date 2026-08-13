@@ -479,6 +479,8 @@ import {
   artifactOriginForRun,
   snapshotAiHtmlVersionsForRun,
 } from './run-file-version-snapshots.js';
+import { runFileVersionsFromSnapshots } from './run-undo.js';
+import { pendingUndoPromptSection, type PendingUndo } from './prompts/pending-undo.js';
 import { reportRunCompletedFromDaemon } from './langfuse-bridge.js';
 import { reconcileDurableRunTerminals } from './runtimes/run-terminal-reconciliation.js';
 import { buildPromptStackTelemetry } from './prompt-telemetry.js';
@@ -675,6 +677,7 @@ import {
   clearAgentSession,
   upsertAgentSession,
   upsertDeployment,
+  takePendingUndo,
   upsertMessage,
   upsertPreviewComment,
 } from './db.js';
@@ -9544,6 +9547,10 @@ export async function startServer({
         ...(origin ? { origin } : {}),
         metadata: projectRecord?.metadata,
       });
+      // What lets a message find its own versions. Recorded for every run, not
+      // just the external-plugin path below, because undo is offered on
+      // ordinary chat turns and a run with no record has no undo point.
+      run.fileVersions = runFileVersionsFromSnapshots(result.snapshots);
       if (origin) {
         const matching = result.snapshots.filter(({ version }) =>
           version.origin?.entrySurface === origin.entrySurface
@@ -9931,6 +9938,15 @@ export async function startServer({
       safeImages,
       amrStagedImages,
     );
+    // Read-and-clear: the note is delivered on exactly one turn. Composed
+    // between the stable instruction block and the user request, which is
+    // where the cached prefix already ends — see prompt-telemetry
+    // SECTION_PRIORITY.
+    const pendingUndoNote = run.conversationId
+      ? pendingUndoPromptSection(
+          takePendingUndo(db, run.conversationId) as PendingUndo | null,
+        )
+      : null;
     const composed = [
       instructionPrompt
         ? `# Instructions (read first)\n\n${formOverride}${instructionPrompt}${cwdHint}${linkedDirsHint}${ECHO_GUARD}\n\n---\n`
@@ -9941,6 +9957,7 @@ export async function startServer({
             : formOverride
               ? `# Instructions\n\n${formOverride}${ECHO_GUARD}\n\n---\n`
               : '',
+      pendingUndoNote ? `# Undo\n\n${pendingUndoNote}\n\n---\n` : '',
       `# User request\n\n${userRequestPrompt}${attachmentHint}${commentHint}`,
       promptImagePaths.length
         ? `\n\n${promptImagePaths.map((p) => `@${p}`).join(' ')}`
@@ -9960,6 +9977,7 @@ export async function startServer({
         { kind: 'browserUsePromptGuard', content: browserUsePromptGuard },
         { kind: 'clientSystemPrompt', content: clientInstructionPrompt },
         { kind: 'echoGuard', content: ECHO_GUARD },
+        { kind: 'pendingUndo', content: pendingUndoNote },
         { kind: 'userRequest', content: userRequestPrompt },
         { kind: 'skillPrompt', content: promptTelemetryParts?.skillPrompt },
         {

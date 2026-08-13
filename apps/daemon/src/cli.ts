@@ -246,7 +246,10 @@ const PROJECT_RESOURCE_STRING_FLAGS = new Set([
   'workspace',
   'workspace-member',
 ]);
-const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow']);
+// `yes` gates `od files undo`, which rewinds the project past a message and
+// discards every later change. Reporting the plan is the default; writing is
+// opt-in.
+const PROJECT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'follow', 'yes']);
 const PREVIEW_STRING_FLAGS = new Set([
   'project', 'file', 'output-dir', 'browser-ws-url', 'preview-origin',
 ]);
@@ -7663,13 +7666,17 @@ async function runFiles(args) {
   od files delete <projectId> <name>           Delete a project file.
   od files diff   <projectId> <relpathA> [<relpathB> | --against -]
                                                Print a unified diff.
-  od files versions <projectId> <relpath>      List saved HTML versions.
+  od files versions <projectId> <relpath>      List saved file versions.
   od files version-read <projectId> <relpath> <versionId>
-                                               Stream one saved HTML version.
+                                               Stream one saved file version.
   od files version-create <projectId> <relpath>
-                                               Save the current HTML as a version.
+                                               Save the current file as a version.
   od files version-restore <projectId> <relpath> <versionId>
-                                               Restore a saved HTML as a new current version.
+                                               Restore a saved version as a new current version.
+  od files undo <projectId> <messageId> [--yes]
+                                               Rewind the project to its state before a
+                                               chat message. Prints what would be
+                                               discarded; --yes applies it.
 
 Common options:
   --daemon-url <url>   Open Design daemon HTTP base.
@@ -7911,6 +7918,43 @@ Common options:
       if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
       if (data?.versionWarning?.message) console.error(`[files] warning: ${data.versionWarning.message}`);
       console.log(`[files] restored ${rel} as version ${data?.version?.version ?? data?.version?.id ?? '-'}`);
+      return;
+    }
+    case 'undo': {
+      const positional = positionalArgs(rest, PROJECT_RESOURCE_STRING_FLAGS);
+      const [id, messageId] = positional;
+      if (!id || !messageId) {
+        console.error('Usage: od files undo <projectId> <messageId> [--yes] [--json]');
+        process.exit(2);
+      }
+      const url = `${base}/api/projects/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/undo`;
+      // Undo is a timeline rewind: it discards this message's changes AND
+      // every change after it. Without --yes the plan is reported and nothing
+      // is written, so the destructive form is always opt-in.
+      if (!flags.yes) {
+        const resp = await fetch(url, { headers: workspaceHeaders });
+        if (!resp.ok) return structuredHttpFailure(resp, 'project-not-found');
+        const plan = await resp.json();
+        if (flags.json) return process.stdout.write(JSON.stringify(plan, null, 2) + '\n');
+        const restores = plan?.restores ?? [];
+        const deletes = plan?.deletes ?? [];
+        const later = plan?.discardedMessageIds ?? [];
+        console.log(`[files] undo would restore ${restores.length} file(s) and delete ${deletes.length}`);
+        for (const entry of restores) console.log(`  restore ${entry.fileName}`);
+        for (const name of deletes) console.log(`  delete  ${name}`);
+        if (later.length > 0) {
+          console.log(`[files] it would also discard ${later.length} later change(s): ${later.join(', ')}`);
+        }
+        console.log('[files] re-run with --yes to apply');
+        return;
+      }
+      const resp = await fetch(url, { method: 'POST', headers: workspaceHeaders });
+      if (!resp.ok) return structuredHttpFailure(resp, 'project-not-found');
+      const data = await resp.json();
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(
+        `[files] undid ${messageId}: restored ${data?.restored?.length ?? 0}, deleted ${data?.deleted?.length ?? 0}, discarded ${data?.discardedMessageIds?.length ?? 0} later change(s)`,
+      );
       return;
     }
     default:

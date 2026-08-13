@@ -618,6 +618,17 @@ export interface ChatRunExecutionDiagnostics {
   };
 }
 
+/** One file a run versioned, paired with the version it displaced.
+ *
+ *  `previousVersionId` is captured when the snapshot is written rather than
+ *  derived from a listing later: once two runs interleave on the same file,
+ *  "the version before this one" is no longer answerable from history alone. */
+export interface RunFileVersion {
+  fileName: string;
+  versionId: string;
+  previousVersionId: string | null;
+}
+
 export interface ChatRunStatusResponse {
   id: string;
   projectId: string | null;
@@ -689,6 +700,15 @@ export interface ChatRunStatusResponse {
    *  this run. Unlike a before/after browser snapshot, this includes edits to
    *  existing files and excludes untouched reference inputs. */
   artifactPaths?: string[];
+  /** File versions this run created, with the version each file was at
+   *  beforehand. Present when the run wrote versionable files. This is what
+   *  lets a message find its own versions and offer an undo; a run with no
+   *  entries has no undo point and must not render the control.
+   *  `previousVersionId` is null when the run created the file. */
+  fileVersions?: RunFileVersion[];
+  /** Set once this run's changes have been undone, so the control renders as
+   *  spent rather than offering a second rewind to the same point. */
+  undoneAt?: string;
   /** Filesystem-backed validation of the one canonical artifact entry this
    *  run can deliver. Present for terminal runs when the daemon can inspect
    *  the project; callers must not infer validity from artifactCount alone. */
@@ -897,6 +917,12 @@ export interface ChatMessage {
   traceObjectFiles?: ProjectFile[];
   // Diff baseline so reattach can rebuild producedFiles after reload.
   preTurnFileNames?: string[];
+  /** Versions this turn created. The undo control renders only when this is
+   *  non-empty, so a prose-only turn offers no rewind. */
+  fileVersions?: RunFileVersion[];
+  /** Set once this turn's changes have been rewound, so the control renders
+   *  as spent instead of offering a second undo to a point that is gone. */
+  undoneAt?: number;
   feedback?: ChatMessageFeedback;
   /**
    * Request-only marker for the final assistant-message persistence pass.

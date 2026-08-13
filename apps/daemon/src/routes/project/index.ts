@@ -29,6 +29,7 @@ import { ArtifactRegressionError } from '../../artifacts/stub-guard.js';
 import {
   ensureCurrentProjectFileVersion,
   isProjectFileVersionPath,
+  isVersionableFileName,
   listProjectFileVersions,
   markProjectFileVersionStoreDeleted,
   readProjectFileVersion,
@@ -59,8 +60,17 @@ import { listSkills } from '../../skills.js';
 import { isSafeId } from '../../projects.js';
 import {
   ensureTeamProjectCommentConversations,
+  getMessageConversationId,
+  listMessages,
+  markMessagesUndone,
+  setPendingUndo,
   SYNC_KEEPS_UPDATED_AT,
 } from '../../db.js';
+import {
+  planUndoForMessages,
+  UnknownUndoTargetError,
+  type UndoPlan,
+} from '../../run-undo.js';
 import {
   BUILT_IN_PROJECT_LOCATION_ID,
   allProjectLocations,
@@ -6025,16 +6035,19 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
       if (!await authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
-      if (!/\.html?$/i.test(fileName)) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'versions are only available for HTML files');
+      // The same allowlist the snapshot writer uses. These routes kept an
+      // HTML-only test after versioning was widened, so a run could version a
+      // stylesheet that its own history endpoint then refused to show.
+      if (!isVersionableFileName(fileName)) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'versions are not available for this file type');
       }
       let file: ProjectFile | null = null;
       let historyFileName = fileName;
       let workingFileContent: string | null = null;
       try {
         const workingFile = await readProjectFile(PROJECTS_DIR, project.id, fileName, project.metadata);
-        if (!/\.html?$/i.test(workingFile.name)) {
-          return sendApiError(res, 400, 'BAD_REQUEST', 'versions are only available for HTML files');
+        if (!isVersionableFileName(workingFile.name)) {
+          return sendApiError(res, 400, 'BAD_REQUEST', 'versions are not available for this file type');
         }
         file = workingFile;
         historyFileName = workingFile.name;
@@ -6111,8 +6124,8 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         'writeFiles',
       )) return;
       const requestedFile = await readProjectFile(PROJECTS_DIR, project.id, fileName, project.metadata);
-      if (!/\.html?$/i.test(requestedFile.name)) {
-        return sendApiError(res, 400, 'BAD_REQUEST', 'versions are only available for HTML files');
+      if (!isVersionableFileName(requestedFile.name)) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'versions are not available for this file type');
       }
       const manualPrompt = typeof req.body?.prompt === 'string' && req.body.prompt.trim()
         ? req.body.prompt.trim()
@@ -6182,6 +6195,145 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         status === 404 ? 'FILE_NOT_FOUND' : 'BAD_REQUEST',
         String(err?.message || err),
       );
+    }
+  });
+
+  /**
+   * Resolve the timeline-rewind plan for a message, or send the error and
+   * return null. Shared by the preview (GET) and the apply (POST) so the
+   * confirmation can never describe a different rewind than the one performed.
+   */
+  function resolveUndoPlan(
+    res: Parameters<typeof sendApiError>[0],
+    messageId: string,
+  ): { plan: UndoPlan; conversationId: string } | null {
+    const conversationId = getMessageConversationId(db, messageId);
+    if (!conversationId) {
+      sendApiError(res, 404, 'MESSAGE_NOT_FOUND', 'message not found');
+      return null;
+    }
+    try {
+      const messages = listMessages(db, conversationId) as Array<{
+        id: string;
+        fileVersions?: Array<{ fileName: string; versionId: string; previousVersionId: string | null }>;
+        undoneAt?: number;
+      }>;
+      return { plan: planUndoForMessages(messages, messageId), conversationId };
+    } catch (err) {
+      if (err instanceof UnknownUndoTargetError) {
+        sendApiError(res, 409, err.code, err.message);
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  // Preview: what a rewind to this message would discard. The UI needs this
+  // before the user commits, because the rewind is destructive.
+  app.get(/^\/api\/projects\/([^/]+)\/messages\/([^/]+)\/undo$/u, async (req, res) => {
+    const params = req.params as unknown as { 0?: string; 1?: string };
+    const projectId = String(params[0] ?? '');
+    const messageId = String(params[1] ?? '');
+    if (!getProject(db, projectId)) {
+      return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
+    }
+    const resolved = resolveUndoPlan(res, messageId);
+    if (!resolved) return;
+    res.json({
+      restores: resolved.plan.restores,
+      deletes: resolved.plan.deletes,
+      discardedMessageIds: resolved.plan.discardedRunIds,
+    });
+  });
+
+  app.post(/^\/api\/projects\/([^/]+)\/messages\/([^/]+)\/undo$/u, async (req, res) => {
+    try {
+      const params = req.params as unknown as { 0?: string; 1?: string };
+      const projectId = String(params[0] ?? '');
+      const messageId = String(params[1] ?? '');
+      const project = getProject(db, projectId);
+      if (!project) {
+        return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
+      }
+      if (!await enforceWorkspaceProjectMutation(
+        req,
+        res,
+        sendApiError,
+        getWorkspaceProject,
+        getWorkspaceProjectByProjectId,
+        db,
+        project.id,
+        'writeFiles',
+      )) return;
+      const resolved = resolveUndoPlan(res, messageId);
+      if (!resolved) return;
+      const { plan } = resolved;
+
+      // Restores go through the same write path as a manual version restore:
+      // old content lands as a NEW version, so an undo is itself undoable.
+      for (const { fileName, versionId } of plan.restores) {
+        if (rejectInternalVersionPath(res, fileName)) return;
+        const restored = await readProjectFileVersion(
+          PROJECTS_DIR,
+          project.id,
+          fileName,
+          versionId,
+          project.metadata,
+        );
+        await withProjectFileVersionLock(
+          PROJECTS_DIR,
+          project.id,
+          fileName,
+          project.metadata,
+          async (versionLock) => {
+            await writeProjectFile(
+              PROJECTS_DIR,
+              project.id,
+              fileName,
+              Buffer.from(restored.content, 'utf8'),
+              {},
+              project.metadata,
+            );
+            try {
+              await versionLock.createVersion(restored.content, {
+                prompt: restored.version.prompt,
+                promptSource: 'restore',
+                source: 'restore',
+                restoreFromVersionId: restored.version.id,
+              });
+            } catch {
+              // A version-capture failure must not abort a rewind already
+              // partly written to disk; the file content is the contract here.
+            }
+          },
+        );
+      }
+      for (const fileName of plan.deletes) {
+        if (rejectInternalVersionPath(res, fileName)) return;
+        await deleteProjectFile(PROJECTS_DIR, project.id, fileName, project.metadata);
+      }
+
+      // Mark the target and every message the rewind discarded, so none of
+      // them offers a second undo to a point that no longer exists.
+      const undoneAt = Date.now();
+      markMessagesUndone(db, [messageId, ...plan.discardedRunIds], undoneAt);
+      // The agent has no process between turns, so it learns about this on the
+      // user's next message rather than now.
+      setPendingUndo(db, resolved.conversationId, {
+        restored: plan.restores.map(({ fileName }) => fileName),
+        deleted: plan.deletes,
+        discardedCount: plan.discardedRunIds.length,
+      });
+
+      res.json({
+        undoneAt,
+        restored: plan.restores.map(({ fileName }) => fileName),
+        deleted: plan.deletes,
+        discardedMessageIds: plan.discardedRunIds,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return sendApiError(res, 500, 'UNDO_FAILED', message);
     }
   });
 

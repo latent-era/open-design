@@ -4329,6 +4329,10 @@ export interface Dict {
   'assistant.copyMarkdown': string;
   'assistant.forkConversation': string;
   'assistant.forkingConversation': string;
+  'assistant.undoChange': string;
+  'assistant.undoing': string;
+  'assistant.undoConfirm': string;
+  'assistant.undoConfirmLater': string;
   'assistant.shareToOpenDesign': string;
   'assistant.shareToOpenDesignBusy': string;
   'assistant.feedbackPrompt': string;

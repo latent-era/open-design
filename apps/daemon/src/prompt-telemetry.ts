@@ -19,6 +19,7 @@ export type PromptTelemetrySectionKind =
   | 'runContextPrompt'
   | 'clientSystemPrompt'
   | 'echoGuard'
+  | 'pendingUndo'
   | 'userRequest'
   | 'skillPrompt'
   | 'designSystemPrompt'
@@ -96,6 +97,7 @@ const REDACTED_CONTENT_KINDS = new Set<PromptTelemetrySectionKind>([
   'runContextPrompt',
   'clientSystemPrompt',
   'echoGuard',
+  'pendingUndo',
   'userRequest',
   'skillPrompt',
   'designSystemPrompt',
@@ -113,8 +115,20 @@ const SECTION_PRIORITY = new Map<PromptTelemetrySectionKind, number>([
   ['researchCommandContract', 6],
   ['runContextPrompt', 7],
   ['echoGuard', 8],
-  ['userRequest', 9],
+  // A pending-undo note varies between turns, so it must sit AFTER every
+  // byte-stable section. `userRequest` moves to 10 to keep the note adjacent
+  // to it; the cached prefix still ends at echoGuard, so nothing regresses.
+  ['pendingUndo', 9],
+  ['userRequest', 10],
 ]);
+
+/** Composition order for a section kind. Exported so the cache-boundary
+ *  invariant can be asserted rather than re-derived by reading this table. */
+export function promptTelemetrySectionPriority(
+  kind: PromptTelemetrySectionKind,
+): number {
+  return SECTION_PRIORITY.get(kind) ?? Number.MAX_SAFE_INTEGER;
+}
 
 const FILE_LOCAL_PATH =
   /(^|[\s([{"'`@])file:\/\/(?:localhost)?\/[^\s)\]}"'`,;<>]+/gi;

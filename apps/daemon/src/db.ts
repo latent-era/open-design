@@ -166,6 +166,7 @@ function migrate(db: SqliteDb): void {
       title TEXT,
       session_mode TEXT NOT NULL DEFAULT 'design',
       intent_signals_json TEXT,
+      pending_undo_json TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -214,6 +215,8 @@ function migrate(db: SqliteDb): void {
       trace_object_files_json TEXT,
       feedback_json TEXT,
       pre_turn_file_names_json TEXT,
+      file_versions_json TEXT,
+      undone_at INTEGER,
       session_mode TEXT,
       run_context_json TEXT,
       task_analytics_json TEXT,
@@ -381,6 +384,12 @@ function migrate(db: SqliteDb): void {
   if (!conversationCols.some((c: DbRow) => c.name === 'intent_signals_json')) {
     db.exec(`ALTER TABLE conversations ADD COLUMN intent_signals_json TEXT`);
   }
+  // A one-shot note for the agent's next turn: an undo rewound the project, so
+  // its memory of the conversation is ahead of what is on disk. Cleared when
+  // composed into a prompt.
+  if (!conversationCols.some((c: DbRow) => c.name === 'pending_undo_json')) {
+    db.exec(`ALTER TABLE conversations ADD COLUMN pending_undo_json TEXT`);
+  }
   const messageCols = db.prepare(`PRAGMA table_info(messages)`).all() as DbRow[];
   if (!messageCols.some((c: DbRow) => c.name === 'agent_id')) {
     db.exec(`ALTER TABLE messages ADD COLUMN agent_id TEXT`);
@@ -408,6 +417,16 @@ function migrate(db: SqliteDb): void {
   }
   if (!messageCols.some((c: DbRow) => c.name === 'pre_turn_file_names_json')) {
     db.exec(`ALTER TABLE messages ADD COLUMN pre_turn_file_names_json TEXT`);
+  }
+  // Undo state. Chat runs are in-memory and do not survive a daemon restart,
+  // so the versions a run created are kept on the message that offers the undo.
+  // Rows written before these columns exist read back undefined, which renders
+  // as "no undo point" rather than a broken control.
+  if (!messageCols.some((c: DbRow) => c.name === 'file_versions_json')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN file_versions_json TEXT`);
+  }
+  if (!messageCols.some((c: DbRow) => c.name === 'undone_at')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN undone_at INTEGER`);
   }
   if (!messageCols.some((c: DbRow) => c.name === 'trace_object_files_json')) {
     db.exec(`ALTER TABLE messages ADD COLUMN trace_object_files_json TEXT`);
@@ -2514,6 +2533,8 @@ export function listMessages(db: SqliteDb, conversationId: string) {
               trace_object_files_json AS traceObjectFilesJson,
               feedback_json AS feedbackJson,
               pre_turn_file_names_json AS preTurnFileNamesJson,
+              file_versions_json AS fileVersionsJson,
+              undone_at AS undoneAt,
               session_mode AS sessionMode,
               run_context_json AS runContextJson,
               task_analytics_json AS taskAnalyticsJson,
@@ -2570,6 +2591,11 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
               events_json = ?, attachments_json = ?, comment_attachments_json = ?,
               produced_files_json = ?, trace_object_files_json = ?, feedback_json = ?,
               pre_turn_file_names_json = ?,
+              -- Write-once undo state: a later upsert that omits these (a
+              -- streamed chunk, or the write that marks the message undone)
+              -- must not clobber them, or the undo point disappears silently.
+              file_versions_json = COALESCE(?, file_versions_json),
+              undone_at = COALESCE(?, undone_at),
               session_mode = ?, run_context_json = ?, task_analytics_json = ?,
               applied_plugin_snapshot_json = ?,
               telemetry_finalized_at = CASE
@@ -2594,6 +2620,8 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
       m.traceObjectFiles ? JSON.stringify(m.traceObjectFiles) : null,
       m.feedback ? JSON.stringify(m.feedback) : null,
       m.preTurnFileNames ? JSON.stringify(m.preTurnFileNames) : null,
+      m.fileVersions ? JSON.stringify(m.fileVersions) : null,
+      m.undoneAt ?? null,
       normalizeMessageSessionModeForStorage(m.sessionMode),
       m.runContext ? JSON.stringify(m.runContext) : null,
       m.taskAnalytics ? JSON.stringify(m.taskAnalytics) : null,
@@ -2614,10 +2642,11 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
     const createdAt = typeof m.createdAt === 'number' && Number.isFinite(m.createdAt)
       ? m.createdAt
       : now;
-    // 25 values: id, conversation_id, role, content, agent_id, agent_name,
+    // 28 values: id, conversation_id, role, content, agent_id, agent_name,
     // run_id, run_status, result_delivery_state, last_run_event_id, events_json, attachments_json,
     // comment_attachments_json, produced_files_json, trace_object_files_json,
-    // feedback_json, pre_turn_file_names_json, session_mode, run_context_json,
+    // feedback_json, pre_turn_file_names_json, file_versions_json, undone_at,
+    // session_mode, run_context_json,
     // task_analytics_json, applied_plugin_snapshot_json,
     // telemetry_finalized_at, started_at, ended_at, position, created_at.
     db.prepare(
@@ -2626,10 +2655,11 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
           run_id, run_status, result_delivery_state, last_run_event_id, events_json,
           attachments_json, comment_attachments_json, produced_files_json,
           trace_object_files_json, feedback_json, pre_turn_file_names_json,
+          file_versions_json, undone_at,
           session_mode, run_context_json, task_analytics_json,
           applied_plugin_snapshot_json,
           telemetry_finalized_at, started_at, ended_at, position, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       m.id,
       conversationId,
@@ -2648,6 +2678,8 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
       m.traceObjectFiles ? JSON.stringify(m.traceObjectFiles) : null,
       m.feedback ? JSON.stringify(m.feedback) : null,
       m.preTurnFileNames ? JSON.stringify(m.preTurnFileNames) : null,
+      m.fileVersions ? JSON.stringify(m.fileVersions) : null,
+      m.undoneAt ?? null,
       normalizeMessageSessionModeForStorage(m.sessionMode),
       m.runContext ? JSON.stringify(m.runContext) : null,
       m.taskAnalytics ? JSON.stringify(m.taskAnalytics) : null,
@@ -2677,6 +2709,8 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
               trace_object_files_json AS traceObjectFilesJson,
               feedback_json AS feedbackJson,
               pre_turn_file_names_json AS preTurnFileNamesJson,
+              file_versions_json AS fileVersionsJson,
+              undone_at AS undoneAt,
               session_mode AS sessionMode,
               run_context_json AS runContextJson,
               task_analytics_json AS taskAnalyticsJson,
@@ -2687,6 +2721,52 @@ export function upsertMessage(db: SqliteDb, conversationId: string, m: DbRow) {
     )
     .get(m.id) as DbRow | undefined;
   return row ? normalizeMessage(row) : null;
+}
+
+/** Record the undo note the agent should be told about on its next turn. */
+export function setPendingUndo(db: SqliteDb, conversationId: string, undo: unknown) {
+  db.prepare(`UPDATE conversations SET pending_undo_json = ? WHERE id = ?`)
+    .run(undo ? JSON.stringify(undo) : null, conversationId);
+}
+
+/** Read and clear the pending undo note. Read-and-clear rather than read-then-
+ *  clear-on-success: a note delivered twice would have the agent re-announce a
+ *  rewind the user already saw, which reads as a second undo happening. */
+export function takePendingUndo(db: SqliteDb, conversationId: string): unknown | null {
+  const row = db
+    .prepare(`SELECT pending_undo_json AS pendingUndoJson FROM conversations WHERE id = ?`)
+    .get(conversationId) as DbRow | undefined;
+  const raw = row?.pendingUndoJson as string | undefined;
+  if (!raw) return null;
+  db.prepare(`UPDATE conversations SET pending_undo_json = NULL WHERE id = ?`).run(conversationId);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Mark messages as rewound. A narrow UPDATE rather than an upsert: the full
+ *  upsert path requires role and content and would rewrite the whole row, so
+ *  marking a message undone could clobber fields the caller did not intend to
+ *  touch. */
+export function markMessagesUndone(db: SqliteDb, messageIds: string[], undoneAt: number) {
+  if (messageIds.length === 0) return;
+  const statement = db.prepare(`UPDATE messages SET undone_at = ? WHERE id = ?`);
+  const run = db.transaction((ids: string[]) => {
+    for (const id of ids) statement.run(undoneAt, id);
+  });
+  run(messageIds);
+}
+
+/** The conversation a message belongs to, or null when the id is unknown.
+ *  Undo is addressed by message id but has to plan over the whole
+ *  conversation, since a rewind discards every later change too. */
+export function getMessageConversationId(db: SqliteDb, messageId: string): string | null {
+  const row = db
+    .prepare(`SELECT conversation_id AS conversationId FROM messages WHERE id = ?`)
+    .get(messageId) as DbRow | undefined;
+  return (row?.conversationId as string | undefined) ?? null;
 }
 
 export function getMessageTelemetryFinalizationState(db: SqliteDb, messageId: string) {
@@ -3683,6 +3763,8 @@ function normalizeMessage(row: DbRow) {
     traceObjectFiles: parseJsonOrUndef(row.traceObjectFilesJson),
     feedback: parseJsonOrUndef(row.feedbackJson),
     preTurnFileNames: parseJsonOrUndef(row.preTurnFileNamesJson),
+    fileVersions: parseJsonOrUndef(row.fileVersionsJson),
+    undoneAt: row.undoneAt ?? undefined,
     sessionMode: normalizeMessageSessionMode(row.sessionMode),
     runContext: parseJsonOrUndef(row.runContextJson),
     taskAnalytics: parseJsonOrUndef(row.taskAnalyticsJson),
