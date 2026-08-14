@@ -10040,7 +10040,11 @@ export async function startServer({
               : '',
       pendingUndoNote ? `# Undo\n\n${pendingUndoNote}\n\n---\n` : '',
       `# User request\n\n${userRequestPrompt}${attachmentHint}${commentHint}`,
-      promptImagePaths.length
+      // Runtimes that attach images as CLI arguments (opencode's `-f`) must
+      // not ALSO receive them as `@path` mentions: opencode resolves `@`
+      // against the project, an upload outside it never resolves, and the turn
+      // died mid tool call with empty output instead of reporting the problem.
+      promptImagePaths.length && !def.attachesImagesAsArgs
         ? `\n\n${promptImagePaths.map((p) => `@${p}`).join(' ')}`
         : '',
     ].join('');

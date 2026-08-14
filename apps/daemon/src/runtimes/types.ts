@@ -143,6 +143,10 @@ export type RuntimeAgentDef = {
   ) => Promise<RuntimeModelOption[] | null>;
   reasoningOptions?: RuntimeReasoningOption[];
   supportsImagePaths?: boolean;
+  /** The runtime passes attached images as CLI arguments rather than as
+   *  `@path` mentions in the prompt. Both at once makes the mention resolve
+   *  against the project and fail. */
+  attachesImagesAsArgs?: boolean;
   maxPromptArgBytes?: number;
   mcpDiscovery?: string;
   // How the daemon forwards the user's `.od/mcp-config.json` external MCP

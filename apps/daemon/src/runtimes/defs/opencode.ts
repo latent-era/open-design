@@ -17,6 +17,7 @@ export const opencodeAgentDef = {
     // text-only model reports that it cannot view the image rather than
     // inventing a reading.
     supportsImagePaths: true,
+    attachesImagesAsArgs: true,
     ...OPENCODE_PERMISSION_CAPABILITY,
     // `opencode models` prints `provider/model` per line. Real-world
     // `opencode models` calls can take >8s (network round-trip to the
@@ -48,7 +49,7 @@ export const opencodeAgentDef = {
     // avoid Windows `spawn ENAMETOOLONG` while preserving OpenCode's
     // structured stream. A literal `-` is parsed as a positional message by
     // OpenCode 1.14.x and can surface as "Session not found".
-    buildArgs: (_prompt, _imagePaths, _extra, options = {}, runtimeContext = {}) => {
+    buildArgs: (_prompt, imagePaths, _extra, options = {}, runtimeContext = {}) => {
       const args = [
         'run',
         '--format',
@@ -71,6 +72,18 @@ export const opencodeAgentDef = {
       }
       if (options.model && options.model !== 'default') {
         args.push('-m', options.model);
+      }
+      // Attached images go through `-f`, not through the prompt text. The
+      // daemon otherwise appends them as `@<abs path>` mentions, which
+      // opencode resolves against the project — an upload living outside it
+      // never resolves, and the turn died with `empty_output` mid tool call
+      // rather than reporting a missing image.
+      //
+      // Whether the selected model can read one is a separate question,
+      // answered by `attachment`/`modalities` in the provider config. A
+      // text-only model reports that it cannot view the image.
+      for (const imagePath of Array.isArray(imagePaths) ? imagePaths : []) {
+        if (typeof imagePath === 'string' && imagePath) args.push('-f', imagePath);
       }
       return args;
     },
