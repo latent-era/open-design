@@ -20,12 +20,17 @@ export const BRAND_USAGE = `Usage:
                                        backing project) as a design system; marks it ready.
                                        --project <projectId> overrides the backing project.
                                        --locale <locale> overrides the stored brand locale.
-  od brand extract-from-html <id> --html-file <path|->
-                       [--css-file <path>] [--base-url <url>] [--json]
-                                       Re-run extraction against pre-captured rendered HTML
-                                       (e.g. a page already loaded past an anti-bot wall),
-                                       instead of fetching. --html-file reads from a file or
-                                       stdin; --css-file folds in collected stylesheet text.
+  od brand extract-from-html <id> (--html-file <path|-> | --project <projectId>)
+                       [--entry-file <relpath>] [--css-file <path>] [--base-url <url>] [--json]
+                                       Build a design system from source instead of fetching.
+                                       --project <projectId> derives it from a project you
+                                       already have: one page for structure plus every local
+                                       stylesheet for the palette and type. --entry-file picks
+                                       which page, defaulting to the project entry or index.
+                                       --html-file instead reads one pre-captured rendered page
+                                       from a file or stdin (e.g. a page already loaded past an
+                                       anti-bot wall); --css-file folds in collected stylesheet
+                                       text.
   od brand get <id> [--json]           Print one brand's full detail (meta + brand + guide).
   od brand delete <id> [--json]        Remove a brand and its registered design system.
 

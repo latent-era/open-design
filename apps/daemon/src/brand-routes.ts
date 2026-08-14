@@ -26,6 +26,8 @@ import {
   listProjectsAwaitingInput,
   type insertProject,
 } from './db.js';
+import { collectProjectBrandSources } from './project-brand-sources.js';
+import { projectDir } from './projects.js';
 import type { CreatedProjectWorkspaceResolver } from './collab/created-project-workspace.js';
 import type { AuthorizeProjectRequest } from './collab/project-request-authority.js';
 import type { WorkspaceResourceContext } from './collab/workspace-resource-mutation.js';
@@ -563,11 +565,29 @@ export function registerBrandRoutes(app: Application, deps: BrandRoutesDeps): vo
   // Registers the `user:<id>` design system and marks the brand `ready`.
   app.post('/api/brands/:id/extract-from-html', async (req: Request, res: Response) => {
     const id = String(req.params.id);
-    const html = typeof req.body?.html === 'string' ? req.body.html : '';
-    const css = typeof req.body?.css === 'string' ? req.body.css : '';
+    let html = typeof req.body?.html === 'string' ? req.body.html : '';
+    let css = typeof req.body?.css === 'string' ? req.body.css : '';
     const baseUrl = typeof req.body?.baseUrl === 'string' ? req.body.baseUrl : '';
+    // `projectId` builds the extractor's inputs from a project the user already
+    // has, instead of requiring a hand-supplied document. The single-document
+    // form is what left this route unused: nobody has one page lying around,
+    // they have a folder of screens sharing a stylesheet.
+    const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId.trim() : '';
+    if (projectId && !html.trim()) {
+      const entryFile = typeof req.body?.entryFile === 'string' ? req.body.entryFile.trim() : '';
+      const sources = collectProjectBrandSources(
+        projectDir(projectsRoot, projectId),
+        entryFile || null,
+      );
+      if (!sources) {
+        res.status(422).json({ error: 'project has no HTML pages to extract a design system from' });
+        return;
+      }
+      html = sources.html;
+      if (!css.trim()) css = sources.css;
+    }
     if (!html.trim()) {
-      res.status(400).json({ error: 'html is required' });
+      res.status(400).json({ error: 'html or projectId is required' });
       return;
     }
     try {

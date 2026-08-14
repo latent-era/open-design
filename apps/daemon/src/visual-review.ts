@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 
 export type VisualReviewVerdict = 'satisfied' | 'not-satisfied' | 'unknown';
 
@@ -19,7 +20,32 @@ export interface VisualReviewOutcome {
  * change description, and demands a leading YES/NO so the verdict does not
  * depend on parsing prose.
  */
-export function buildVisualReviewPrompt(request: string): string {
+export function buildVisualReviewPrompt(request: string, stateName?: string): string {
+  if (stateName) {
+    // A state screenshot must NOT be judged against the original request. The
+    // empty state of a booking list legitimately shows no bookings, so asking
+    // "does this satisfy 'add a booking row'?" earns a NO for a page that is
+    // working exactly as designed — and that false dissent would then spend a
+    // retry turn "fixing" something correct.
+    return [
+      'You are checking a screenshot of a user interface in one specific state.',
+      '',
+      `The state being shown is: ${stateName}`,
+      `For context, the change originally requested was: ${request}`,
+      '',
+      'Judge whether this STATE is presented sensibly. It is expected and',
+      'correct that content differs from the normal view — an empty state shows',
+      'no items, a loading state shows placeholders. What matters is whether a',
+      'user would understand what they are seeing.',
+      '',
+      'Answer NO for: a completely blank area with no explanation, text clipped',
+      'or overlapping, controls colliding, or content cut off at an edge.',
+      'Answer YES if the state reads clearly and nothing is visibly broken.',
+      '',
+      'Answer with YES or NO as the very first word, then one short sentence',
+      'naming the evidence you saw.',
+    ].join('\n');
+  }
   return [
     'You are checking a screenshot of a user interface after a change was requested.',
     '',
@@ -55,6 +81,75 @@ export function parseVisualReviewVerdict(answer: string): VisualReviewOutcome {
   };
 }
 
+/** Upper bound on how much reviewer prose can reach the retry prompt. */
+export const MAX_VISUAL_REVIEW_RETRY_NOTE_CHARS = 500;
+
+/**
+ * Build the follow-up instruction for a page the reviewer judged wrong.
+ *
+ * The note is model-written prose, so it is quoted as an observation rather
+ * than pasted in as a directive — handing model commentary to a model as if it
+ * were an instruction is what produced an earlier multi-megabyte runaway. It is
+ * also truncated: the reviewer is asked for one sentence, but nothing enforces
+ * that, and the local context this runs in has no room to absorb a reviewer
+ * that ignores the request.
+ *
+ * The scope is deliberately narrow. The run has already carried out the user's
+ * request; what failed is one visible detail on one page.
+ */
+export function buildVisualReviewRetryPrompt(input: {
+  file: string;
+  note: string;
+}): string {
+  const note = (input.note ?? '')
+    .trim()
+    .slice(0, MAX_VISUAL_REVIEW_RETRY_NOTE_CHARS);
+  return [
+    `A visual check of ${input.file} found a problem with how the page renders.`,
+    '',
+    note
+      ? `The reviewer looked at a screenshot of the page and reported:\n"${note}"`
+      : 'The reviewer looked at a screenshot of the page and judged that it does not match what was asked for.',
+    '',
+    'The screenshot is attached. Look at it, then fix only this problem in',
+    `${input.file} (and any stylesheet it depends on).`,
+    '',
+    'Do not start over and do not redo the original request — the rest of the',
+    'work is already done and correct. Keep the change as small as the fix',
+    'requires. If the render actually looks right to you and the report is',
+    'mistaken, say so and change nothing.',
+  ].join('\n');
+}
+
+/**
+ * Copy a screenshot somewhere the prompt-image sanitiser will accept it.
+ *
+ * `resolveSafePromptImagePaths` only admits paths inside UPLOAD_DIR and drops
+ * anything else with a bare `continue` — no error, no warning. Audit
+ * screenshots live under the project's own directory, so passing one straight
+ * through silently yields a retry with no image attached, asking the model to
+ * fix a rendering fault it was never shown.
+ *
+ * Returns null on any failure: the retry is a best-effort improvement on a turn
+ * that has already written its files, so it degrades to a note-only prompt
+ * rather than taking the turn down with it.
+ */
+export function stageScreenshotForPrompt(
+  screenshotPath: string,
+  uploadDir: string,
+): string | null {
+  try {
+    if (!fs.existsSync(screenshotPath)) return null;
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const ext = path.extname(screenshotPath) || '.png';
+    const staged = path.join(uploadDir, `visual-review-${randomUUID()}${ext}`);
+    fs.copyFileSync(screenshotPath, staged);
+    return staged;
+  } catch {
+    return null;
+  }
+}
+
 function imageDataUrl(screenshotPath: string): string {
   const base64 = fs.readFileSync(screenshotPath).toString('base64');
   const ext = path.extname(screenshotPath).toLowerCase();
@@ -66,6 +161,7 @@ function imageDataUrl(screenshotPath: string): string {
 async function reviewWithLocalModel(input: {
   screenshotPath: string;
   request: string;
+  stateName?: string | undefined;
   endpoint: string;
   model: string;
   timeoutMs: number;
@@ -86,7 +182,7 @@ async function reviewWithLocalModel(input: {
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: buildVisualReviewPrompt(input.request) },
+            { type: 'text', text: buildVisualReviewPrompt(input.request, input.stateName) },
             { type: 'image_url', image_url: { url: imageDataUrl(input.screenshotPath) } },
           ],
         }],
@@ -107,6 +203,7 @@ async function reviewWithLocalModel(input: {
 async function reviewWithCodex(input: {
   screenshotPath: string;
   request: string;
+  stateName?: string | undefined;
   scriptPath: string;
   timeoutMs: number;
 }): Promise<VisualReviewOutcome> {
@@ -116,7 +213,7 @@ async function reviewWithCodex(input: {
       [
         input.scriptPath,
         '--image', input.screenshotPath,
-        '--prompt', buildVisualReviewPrompt(input.request),
+        '--prompt', buildVisualReviewPrompt(input.request, input.stateName),
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
@@ -152,6 +249,7 @@ async function reviewWithCodex(input: {
 export async function reviewRenderedPage(input: {
   screenshotPath: string;
   request: string;
+  stateName?: string | undefined;
   localEndpoint?: string | undefined;
   localModel?: string | undefined;
   codexScriptPath?: string | undefined;
@@ -166,6 +264,7 @@ export async function reviewRenderedPage(input: {
       return await reviewWithLocalModel({
         screenshotPath: input.screenshotPath,
         request: input.request,
+        stateName: input.stateName,
         endpoint: input.localEndpoint,
         model: input.localModel,
         timeoutMs,
@@ -180,6 +279,7 @@ export async function reviewRenderedPage(input: {
       return await reviewWithCodex({
         screenshotPath: input.screenshotPath,
         request: input.request,
+        stateName: input.stateName,
         scriptPath: input.codexScriptPath,
         timeoutMs,
       });

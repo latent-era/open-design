@@ -914,6 +914,116 @@ describe('brand routes', () => {
     }
   });
 
+  /**
+   * The codebase-first path. `extract-from-html` has always been able to build
+   * a design system, but only from a rendered document handed to it by hand —
+   * which nobody has, so the capability went unused. Passing a project instead
+   * is what makes it reachable.
+   */
+  it('builds a design system from a project instead of supplied HTML', async () => {
+    const prefetch = vi.fn(async () => null);
+    const server = await startBrandServer({
+      prefetch,
+      logoFallback: NO_LOGO_FALLBACK,
+      imageryFallback: NO_IMAGERY_FALLBACK,
+    });
+    try {
+      const started = await server.requestJson('/api/brands', {
+        method: 'POST',
+        body: { url: 'acme.com' },
+      });
+      expect(started.status).toBe(200);
+      const projectId = started.body.projectId as string;
+      expect(typeof projectId).toBe('string');
+
+      // A project shaped like a real prototype: several screens, and the
+      // palette spread across more than one stylesheet.
+      const projectPath = path.join(projectsRoot, projectId);
+      mkdirSync(projectPath, { recursive: true });
+      writeFileSync(
+        path.join(projectPath, 'index.html'),
+        [
+          '<!doctype html><html><head><title>Acme Inc</title>',
+          '<meta name="description" content="We build delightful developer tools.">',
+          '<link rel="stylesheet" href="base.css">',
+          '</head><body><h1>Welcome to Acme</h1><h2>Fast, friendly software</h2>',
+          `<p>${'Acme builds delightful developer tools teams enjoy using every day. '.repeat(2)}</p>`,
+          '</body></html>',
+        ].join(''),
+        'utf8',
+      );
+      writeFileSync(
+        path.join(projectPath, 'booking.html'),
+        '<!doctype html><html><head><link rel="stylesheet" href="booking.css"></head><body><p>Book</p></body></html>',
+        'utf8',
+      );
+      writeFileSync(
+        path.join(projectPath, 'base.css'),
+        ':root{--brand:#3b5bdb}h1{color:#3b5bdb;font-family:"Inter",sans-serif}body{background:#ffffff;color:#1f2933}',
+        'utf8',
+      );
+      writeFileSync(
+        path.join(projectPath, 'booking.css'),
+        'a{color:#e8590c}.accent{color:#0ca678}.cta{background:#3b5bdb}',
+        'utf8',
+      );
+
+      const extracted = await server.requestJson(`/api/brands/${started.body.id}/extract-from-html`, {
+        method: 'POST',
+        body: { projectId },
+      });
+
+      expect(extracted.status).toBe(200);
+      expect(extracted.body.id).toBe(started.body.id);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('rejects an extract request carrying neither HTML nor a project', async () => {
+    const server = await startBrandServer({
+      prefetch: vi.fn(async () => null),
+      logoFallback: NO_LOGO_FALLBACK,
+      imageryFallback: NO_IMAGERY_FALLBACK,
+    });
+    try {
+      const started = await server.requestJson('/api/brands', {
+        method: 'POST',
+        body: { url: 'acme.com' },
+      });
+      const response = await server.requestJson(`/api/brands/${started.body.id}/extract-from-html`, {
+        method: 'POST',
+        body: {},
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('reports a project with no pages rather than failing opaquely', async () => {
+    const server = await startBrandServer({
+      prefetch: vi.fn(async () => null),
+      logoFallback: NO_LOGO_FALLBACK,
+      imageryFallback: NO_IMAGERY_FALLBACK,
+    });
+    try {
+      const started = await server.requestJson('/api/brands', {
+        method: 'POST',
+        body: { url: 'acme.com' },
+      });
+      const projectId = started.body.projectId as string;
+      mkdirSync(path.join(projectsRoot, projectId), { recursive: true });
+      const response = await server.requestJson(`/api/brands/${started.body.id}/extract-from-html`, {
+        method: 'POST',
+        body: { projectId },
+      });
+      expect(response.status).toBe(422);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('aborts an active programmatic pass before extracting from browser HTML', async () => {
     let prefetchStarted!: () => void;
     const prefetchStartedPromise = new Promise<void>((resolve) => {

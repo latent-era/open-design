@@ -18,6 +18,7 @@ import { useAnalytics } from '../analytics/provider';
 import { trackDesignSystemEditClick } from '../analytics/events';
 import { requestHomeChip } from '../runtime/home-intent';
 import { brandSummaryToKit } from '../runtime/design-kit';
+import { extractBrandFromHtml } from '../runtime/brands';
 import { DesignKitView } from './DesignKitView';
 import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import {
@@ -65,6 +66,8 @@ export function BrandPreviewCard({
   const projectId = meta.projectId;
   const [busy, setBusy] = useState(false);
   const [backingProjectMissing, setBackingProjectMissing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
 
   const kit = brandSummaryToKit(summary, workspaceContext);
 
@@ -179,6 +182,22 @@ export function BrandPreviewCard({
     </span>
   ) : null;
 
+  // Rebuild the design system from the backing project's own source — the
+  // codebase-first path. The extractor has always been able to do this; what
+  // was missing was any way to ask for it that did not involve hand-supplying a
+  // rendered document.
+  const rebuildFromProject = useCallback(async () => {
+    if (!projectId || rebuilding) return;
+    setRebuilding(true);
+    try {
+      const outcome = await extractBrandFromHtml(meta.id, { projectId });
+      if (outcome.ok) onChanged?.();
+      else setRebuildError(outcome.error);
+    } finally {
+      setRebuilding(false);
+    }
+  }, [projectId, rebuilding, meta.id, onChanged]);
+
   const actionsSlot = compact ? null : (
     <>
       <Button
@@ -199,6 +218,17 @@ export function BrandPreviewCard({
           {t('brandDetail.openProject')}
         </Button>
       ) : null}
+      {projectId ? (
+        <Button
+          variant="ghost"
+          onClick={() => void rebuildFromProject()}
+          disabled={busy || rebuilding || backingProjectMissing}
+          data-testid="brand-preview-rebuild-from-project"
+          title={t('brandDetail.rebuildFromProjectHint')}
+        >
+          {rebuilding ? t('brandDetail.rebuildingFromProject') : t('brandDetail.rebuildFromProject')}
+        </Button>
+      ) : null}
       <Button
         variant="ghost"
         onClick={() => void deleteBrand()}
@@ -215,6 +245,11 @@ export function BrandPreviewCard({
       {backingProjectMissing ? (
         <div className={styles.missingProjectNotice} role="status">
           {t('project.missing')}
+        </div>
+      ) : null}
+      {rebuildError ? (
+        <div className={styles.missingProjectNotice} role="status">
+          {rebuildError}
         </div>
       ) : null}
       {failed && meta.error ? (

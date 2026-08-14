@@ -17,7 +17,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
-import { executionProfileFromStreamFormat, PLUGIN_SHARE_ACTION_PLUGIN_IDS } from '@open-design/contracts';
+import { contextWindowForModel, executionProfileFromStreamFormat, PLUGIN_SHARE_ACTION_PLUGIN_IDS } from '@open-design/contracts';
 import { isTodoWriteToolName, stopReasonIsTruncation, todoItemsFromTodoWriteInput } from '@open-design/contracts';
 import type {
   CollabCloudMemberDirectoryEntry,
@@ -203,8 +203,10 @@ import {
   checkPromptArgvBudget,
   checkWindowsCmdShimCommandLineBudget,
   checkWindowsDirectExeCommandLineBudget,
+  AGENT_DEFS,
   detectAgents,
   getAgentDef,
+  resolveAgentBin,
   isKnownModel,
   isKnownServiceTier,
   openDesignAmrRunAttempt,
@@ -469,6 +471,7 @@ import {
   POST_TOOL_RESUME_CONTINUATION_PROMPT,
   decidePostToolResumeRecovery,
   decideSafeRunRetry,
+  decideVisualReviewRetry,
 } from './run-retry-policy.js';
 import {
   amrUserIdForRunAnalytics,
@@ -485,7 +488,12 @@ import {
   snapshotAiHtmlVersionsForRun,
 } from './run-file-version-snapshots.js';
 import { runFileVersionsFromSnapshots } from './run-undo.js';
-import { reviewRenderedPage } from './visual-review.js';
+import {
+  buildVisualReviewRetryPrompt,
+  reviewRenderedPage,
+  stageScreenshotForPrompt,
+} from './visual-review.js';
+import { estimateTaskTokens, routeByTaskShape, routingCandidatesFromAgents } from './task-routing.js';
 import { pendingUndoPromptSection, type PendingUndo } from './prompts/pending-undo.js';
 import { reportRunCompletedFromDaemon } from './langfuse-bridge.js';
 import { reconcileDurableRunTerminals } from './runtimes/run-terminal-reconciliation.js';
@@ -9609,8 +9617,9 @@ export async function startServer({
           const shot = receipt?.viewports?.find((v) => v.screenshot)?.screenshot;
           const latestRequest = latestRunPromptForHtmlVersionSnapshot().prompt;
           if (!shot || !latestRequest) continue;
+          const screenshotPath = path.resolve(projectRoot, shot);
           const review = await reviewRenderedPage({
-            screenshotPath: path.resolve(projectRoot, shot),
+            screenshotPath,
             request: latestRequest,
             localEndpoint: process.env.LOCAL_LLM_DEV_URL,
             localModel: process.env.OD_VISUAL_REVIEW_MODEL ?? 'qwen3.6-35b',
@@ -9619,8 +9628,42 @@ export async function startServer({
           if (!review) continue;
           // Keep the first dissenting verdict rather than the last page's, so
           // one screen reading wrong is not overwritten by a later one passing.
+          // Interaction states, when the page declares any. Off by default:
+          // each state is another vision call on a 15–86 tok/s local host, and
+          // the state results are already consumed deterministically — a state
+          // that renders broken fails the receipt through `passed`, so nothing
+          // is orphaned when this stays off. Turn it on to have the states
+          // actually looked at, which is the only way to catch an empty state
+          // that renders as a blank panel.
+          if (process.env.OD_VISUAL_REVIEW_STATES === '1') {
+            for (const stateResult of receipt?.states ?? []) {
+              if (!stateResult?.screenshot) continue;
+              const stateReview = await reviewRenderedPage({
+                screenshotPath: path.resolve(projectRoot, stateResult.screenshot),
+                request: latestRequest,
+                stateName: stateResult.state,
+                localEndpoint: process.env.LOCAL_LLM_DEV_URL,
+                localModel: process.env.OD_VISUAL_REVIEW_MODEL ?? 'qwen3.6-35b',
+                codexScriptPath: process.env.OD_VISUAL_REVIEW_CODEX_SCRIPT,
+              });
+              if (stateReview?.verdict !== 'not-satisfied') continue;
+              if (!run.visualReview || run.visualReview.verdict !== 'not-satisfied') {
+                run.visualReview = {
+                  ...stateReview,
+                  file: `${relpath} (${stateResult.state} state)`,
+                };
+                run.visualReviewScreenshotPath = path.resolve(projectRoot, stateResult.screenshot);
+              }
+            }
+          }
           if (!run.visualReview || review.verdict === 'not-satisfied') {
             run.visualReview = { ...review, file: relpath };
+            // The image the verdict was formed from, kept so a dissent can be
+            // handed back to the model with the evidence attached. Held beside
+            // run.visualReview rather than inside it: this is an absolute
+            // daemon-side path, and run.visualReview is serialized to the
+            // client.
+            run.visualReviewScreenshotPath = screenshotPath;
           }
         } catch (err) {
           console.warn(
@@ -10048,6 +10091,63 @@ export async function startServer({
         ? `\n\n${promptImagePaths.map((p) => `@${p}`).join(' ')}`
         : '',
     ].join('');
+    // What this turn will cost before the model does anything, against the
+    // window it actually has. The failure this reports is not a bug but
+    // arithmetic: a project-sized prompt with a few reference images is most of
+    // a 65k window on arrival, and the only signal used to be the turn dying at
+    // the ceiling. Reported, never acted on — re-routing someone's work to a
+    // different model behind their back trades one surprise for a worse one.
+    try {
+      const estimatedTokens = estimateTaskTokens({
+        sourceBytes: composed.length,
+        imageCount: promptImagePaths.length,
+      });
+      const selectedWindow = contextWindowForModel(safeModel);
+      if (selectedWindow !== null) {
+        // The roster is every installed agent, each at its own default model.
+        // Availability is resolved rather than assumed: naming an agent the
+        // user has not got reads as an instruction that cannot be followed.
+        const roster = AGENT_DEFS.map((candidateDef) => {
+          const isSelected = candidateDef.id === def.id;
+          return {
+            agentId: candidateDef.id,
+            // The selected agent is already resolved — reuse it rather than
+            // re-deriving, so the recommendation compares against the model
+            // this turn will actually use.
+            model: isSelected
+              ? safeModel
+              : resolveModelForAgent(candidateDef, null, process.env, null),
+            available: isSelected || !!resolveAgentBin(candidateDef.id, configuredAgentEnv),
+            local: isSelected ? true : undefined,
+          };
+        });
+        const routing = routeByTaskShape({
+          estimatedTokens,
+          candidates: routingCandidatesFromAgents(roster),
+          selectedAgentId: def.id,
+        });
+        design.runs.emit(run, 'diagnostic', {
+          type: 'task_routing',
+          estimated_tokens: estimatedTokens,
+          model: safeModel,
+          context_window: selectedWindow,
+          fits: routing?.fits ?? null,
+          matches_selection: routing?.matchesSelection ?? null,
+          ...(routing && !routing.matchesSelection
+            ? {
+                recommended_agent_id: routing.agentId,
+                recommended_model: routing.model,
+                recommended_context_window: routing.contextWindow,
+              }
+            : {}),
+          ...(routing && (!routing.fits || !routing.matchesSelection)
+            ? { reason: routing.reason }
+            : {}),
+        });
+      }
+    } catch (err) {
+      console.warn('[routing] task shape estimate failed:', err);
+    }
     run.promptTelemetry = buildPromptStackTelemetry({
       composedPrompt: composed,
       sections: [
@@ -10401,6 +10501,88 @@ export async function startServer({
       if (signal) return 'signal';
       if (typeof code === 'number') return code === 0 ? 'exit_0' : 'exit_nonzero';
       return 'unknown';
+    };
+    /**
+     * Hand a dissenting render verdict back to the model for one more turn.
+     *
+     * The reviewer has been filing verdicts that nothing read: a page the model
+     * was told was wrong shipped anyway, because "not-satisfied" was recorded
+     * and then dropped. This closes that loop — the note and the screenshot go
+     * back with a narrow instruction to fix the one reported fault.
+     *
+     * Strictly advisory. A dissent schedules another attempt or it does
+     * nothing; it never fails the turn. The reviewer is a probabilistic judge
+     * and a wrong verdict must cost at most one extra turn, never a run whose
+     * edits actually succeeded.
+     *
+     * Returns true when a retry was scheduled, meaning the caller must not
+     * finalize this attempt.
+     */
+    const scheduleVisualReviewRetryIfDissenting = () => {
+      const configuredMax = Number.parseInt(
+        process.env.OD_VISUAL_REVIEW_RETRY_MAX ?? '',
+        10,
+      );
+      const decision = decideVisualReviewRetry({
+        verdict: run.visualReview?.verdict,
+        attemptCount: run.visualReviewRetryAttemptCount ?? 0,
+        cancelRequested: !!run.cancelRequested,
+        ...(Number.isFinite(configuredMax) ? { maxAttempts: configuredMax } : {}),
+      });
+      if (!decision.shouldRetry || design.runs.isTerminal(run.status)) return false;
+
+      const dissent = run.visualReview;
+      const staged = run.visualReviewScreenshotPath
+        ? stageScreenshotForPrompt(run.visualReviewScreenshotPath, UPLOAD_DIR)
+        : null;
+      const retryPrompt = buildVisualReviewRetryPrompt({
+        file: dissent?.file ?? 'the page',
+        note: dissent?.note ?? '',
+      });
+      run.visualReviewRetryAttemptCount = decision.attemptIndex;
+      // Drop the verdict being acted on so the follow-up turn reports its own
+      // result. Left in place it would survive a successful fix, because
+      // verifyPagesVisually deliberately refuses to let a passing page
+      // overwrite a recorded dissent. The one case this loses is a retry that
+      // edits nothing at all — the model was invited to say the report was
+      // mistaken — which leaves no fresh render to judge and so no advisory.
+      run.visualReview = undefined;
+      run.visualReviewScreenshotPath = undefined;
+      // Discard this attempt's artifact diff so the follow-up diffs itself.
+      // resolveRunArtifactOutcomeBeforeFinish memoizes into run.artifactOutcome
+      // and returns early on a second call, and tearDownAttemptForRetry does
+      // not clear it; startChatRun re-baselines on entry, so clearing here is
+      // all the next attempt needs.
+      //
+      // This is defensive rather than load-bearing on the common path: the
+      // freshness cutoff is recomputed from live statSync mtimes on every
+      // call, so a stale outcome still yields a current cutoff and the
+      // repaired page is re-reviewed either way (tests pass with this removed).
+      // What it protects is the case where the follow-up touches a DIFFERENT
+      // set of files than the attempt that earned the dissent — a stylesheet-
+      // only fix, say — where the inherited file list would describe work that
+      // is no longer the work being verified.
+      run.artifactOutcome = undefined;
+      run.artifactPaths = undefined;
+      design.runs.emit(run, 'diagnostic', {
+        type: 'visual_review_retry_attempted',
+        attempt_index: decision.attemptIndex,
+        max_attempts: decision.maxAttempts,
+        file: dissent?.file ?? null,
+        screenshot_attached: !!staged,
+      });
+      scheduleRetryRestart(0, {
+        ...chatBody,
+        message: retryPrompt,
+        currentPrompt: retryPrompt,
+        imagePaths: staged ? [staged] : [],
+        // This turn is a correction inside the existing conversation; it is not
+        // a new user request and must not rename the conversation after it.
+        titleGeneration: undefined,
+        attachments: [],
+        commentAttachments: [],
+      });
+      return true;
     };
     const finishWithRetryDecision = (status, code = null, signal = null) => {
       lifecycle.mark('finalize_start');
@@ -13385,6 +13567,19 @@ export async function startServer({
         } catch (err) {
           console.warn('[sessions] delivered session persistence failed', err);
         }
+        // Never let the advisory retry strand the turn. This runs inside an
+        // async close handler whose only wrapper is a `finally`, so a throw
+        // here does not fail the run — it becomes an unhandled rejection and
+        // finishWithRetryDecision is never reached, leaving the run stuck
+        // mid-flight forever. A fault in a best-effort extra turn must degrade
+        // to finalizing normally.
+        let visualReviewRetryScheduled = false;
+        try {
+          visualReviewRetryScheduled = scheduleVisualReviewRetryIfDissenting();
+        } catch (err) {
+          console.warn('[qa] visual review retry scheduling failed:', err);
+        }
+        if (visualReviewRetryScheduled) return;
       }
       finishWithRetryDecision(status, code, signal);
       } finally {

@@ -284,8 +284,18 @@ export interface BrandFinalizeResponse {
  * fetch). Reuses `BrandFinalizeResponse` on success.
  */
 export interface BrandExtractFromHtmlRequest {
-  /** `document.documentElement.outerHTML` of the user-unblocked page. */
-  html: string;
+  /** `document.documentElement.outerHTML` of the user-unblocked page.
+   *  Optional when `projectId` is given — the daemon reads the page from the
+   *  project instead. Exactly one of the two is required. */
+  html?: string;
+  /** Derive the design system from a project the user already has: one page for
+   *  structure, plus every local stylesheet for the palette and type. This is
+   *  the form people can actually reach — the `html` form needs a rendered
+   *  document nobody keeps to hand, which is why it went unused. */
+  projectId?: string;
+  /** Which page in the project supplies the structure. Defaults to the
+   *  project's entry file, then `index.html`, then the first page. */
+  entryFile?: string;
   /** Concatenated stylesheet text + computed-style harvest collected from the
    *  rendered page. Optional — inline `<style>` in `html` is used regardless. */
   css?: string;

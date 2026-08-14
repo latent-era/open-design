@@ -39,6 +39,95 @@ export interface PrototypeQaViewportResult {
   issues: PrototypeQaIssue[];
 }
 
+/**
+ * A named way to perturb the page before it is captured.
+ *
+ * Empty, loading, error and modal states are data states: a static prototype
+ * has no data layer, so the only thing that can express them is the page's own
+ * CSS, keyed off a class. Hover is different — the browser can produce it
+ * directly — but the audit still has to be told which element to hover.
+ */
+export interface PrototypeQaState {
+  name: string;
+  className?: string;
+  hoverSelector?: string;
+}
+
+export interface PrototypeQaStateResult {
+  state: string;
+  viewport: PrototypeQaViewport;
+  screenshot: string;
+  issues: PrototypeQaIssue[];
+}
+
+/**
+ * Ceiling on states rendered per page. Every state is another full render and
+ * screenshot, and this project has already been bitten once by verification
+ * cost scaling with something the author did not choose deliberately — a
+ * shared-stylesheet edit demanding an audit of every page it touched. A page
+ * whose CSS names forty states gets the first few, not forty renders.
+ */
+export const MAX_PROTOTYPE_QA_STATES = 6;
+
+const STATE_CLASS_PATTERN = /\bod-state-([a-z0-9]+(?:-[a-z0-9]+)*)/giu;
+const HOVER_ATTRIBUTE = 'data-od-hover';
+
+/**
+ * Work out which states a page declares, by reading its own source.
+ *
+ * Discovery rather than configuration is the whole point. A per-page config
+ * file describing states is one more thing to write and keep in step, so it
+ * would sit empty and the feature would go unused — the same fate as
+ * `od brand extract-from-html`. Writing the rule that implements a state is
+ * what declares it: `.od-state-empty .list { display: none }` is both the
+ * implementation and the declaration.
+ *
+ * Pass the page's HTML plus the contents of its local stylesheets.
+ */
+export function discoverPrototypeStates(
+  sources: readonly string[],
+): PrototypeQaState[] {
+  const names = new Set<string>();
+  let hover = false;
+  for (const source of sources) {
+    if (typeof source !== 'string' || !source.trim()) continue;
+    if (source.includes(HOVER_ATTRIBUTE)) hover = true;
+    // Fresh lastIndex per source: the regex is global and module-scoped.
+    STATE_CLASS_PATTERN.lastIndex = 0;
+    let match = STATE_CLASS_PATTERN.exec(source);
+    while (match) {
+      const name = match[1];
+      if (name) names.add(name.toLowerCase());
+      match = STATE_CLASS_PATTERN.exec(source);
+    }
+  }
+  const states: PrototypeQaState[] = [...names]
+    .sort()
+    .map((name) => ({ name, className: `od-state-${name}` }));
+  if (hover) states.push({ name: 'hover', hoverSelector: `[${HOVER_ATTRIBUTE}]` });
+  return states.slice(0, MAX_PROTOTYPE_QA_STATES);
+}
+
+/** Read the sources discovery needs: the page plus its local stylesheets. */
+export function prototypeStateSources(projectRoot: string, relpath: string): string[] {
+  const sources: string[] = [];
+  try {
+    sources.push(fs.readFileSync(safeProjectFile(projectRoot, relpath), 'utf8'));
+  } catch {
+    return sources;
+  }
+  for (const dependency of localDependencyPaths(projectRoot, relpath)) {
+    if (!/\.css$/iu.test(dependency)) continue;
+    try {
+      sources.push(fs.readFileSync(safeProjectFile(projectRoot, dependency), 'utf8'));
+    } catch {
+      // A missing stylesheet is already reported as a failed request by the
+      // render itself; it must not take state discovery down with it.
+    }
+  }
+  return sources;
+}
+
 export interface PrototypeQaReceipt {
   version: number;
   projectId: string;
@@ -47,6 +136,13 @@ export interface PrototypeQaReceipt {
   auditedAt: string;
   passed: boolean;
   viewports: PrototypeQaViewportResult[];
+  /**
+   * Optional, and deliberately not a receipt-version bump: every existing
+   * receipt on disk stays valid, where a bump would mark the whole corpus
+   * stale and force a full re-audit of every page to gain a field most pages
+   * will never populate.
+   */
+  states?: PrototypeQaStateResult[];
 }
 
 function normalizeRelpath(value: string): string {
@@ -114,10 +210,17 @@ function projectFileUrl(origin: string, projectId: string, relpath: string): str
   return `${origin.replace(/\/$/u, '')}/api/projects/${encodeURIComponent(projectId)}/files/${encoded}`;
 }
 
-function screenshotPath(projectRoot: string, outputDir: string, relpath: string, viewport: PrototypeQaViewport): string {
+function screenshotPath(
+  projectRoot: string,
+  outputDir: string,
+  relpath: string,
+  viewport: PrototypeQaViewport,
+  stateName?: string,
+): string {
   const outputRoot = safeProjectFile(projectRoot, outputDir);
   fs.mkdirSync(outputRoot, { recursive: true });
-  return path.join(outputRoot, `${receiptStem(relpath)}-${viewport.name}.png`);
+  const suffix = stateName ? `-${viewport.name}-${stateName}` : `-${viewport.name}`;
+  return path.join(outputRoot, `${receiptStem(relpath)}${suffix}.png`);
 }
 
 function conciseConsoleIssue(message: ConsoleMessage): PrototypeQaIssue | null {
@@ -273,6 +376,8 @@ export async function runPrototypeAudit(input: {
     browserWSEndpoint: browserWsEndpoint(browserWsUrl, input.browserToken ?? process.env.OD_BROWSERLESS_TOKEN),
   });
   const results: PrototypeQaViewportResult[] = [];
+  const stateResults: PrototypeQaStateResult[] = [];
+  const states = discoverPrototypeStates(prototypeStateSources(projectRoot, relpath));
   try {
     for (const viewport of input.viewports ?? PROTOTYPE_QA_VIEWPORTS) {
       const page = await browser.newPage();
@@ -302,6 +407,71 @@ export async function runPrototypeAudit(input: {
         await page.close();
       }
     }
+    // States are captured at ONE viewport, not all of them. The base sweep
+    // already covers the responsive question; what a state adds is a different
+    // rendering of the same width. Multiplying states by viewports would make
+    // a page with four states cost twelve extra renders, which is how
+    // verification became too expensive to run last time.
+    const stateViewport = (input.viewports ?? PROTOTYPE_QA_VIEWPORTS)[0];
+    if (stateViewport) {
+      for (const state of states) {
+        const page = await browser.newPage();
+        const runtimeIssues: PrototypeQaIssue[] = [];
+        page.on('console', (message) => {
+          const issue = conciseConsoleIssue(message);
+          if (issue) runtimeIssues.push(issue);
+        });
+        page.on('pageerror', (error) =>
+          runtimeIssues.push({ type: 'page-error', message: error.message.slice(0, 500) }));
+        try {
+          await page.setViewport({
+            width: stateViewport.width,
+            height: stateViewport.height,
+            deviceScaleFactor: 1,
+          });
+          const apiToken = input.apiToken ?? process.env.OD_API_TOKEN;
+          if (apiToken) await page.setExtraHTTPHeaders({ authorization: `Bearer ${apiToken}` });
+          await page.goto(projectFileUrl(previewOrigin, input.projectId, relpath), {
+            waitUntil: 'networkidle2',
+            timeout: 30_000,
+          });
+          if (state.className) {
+            await page.evaluate((className: string) => {
+              (globalThis as any).document.documentElement.classList.add(className);
+            }, state.className);
+          }
+          if (state.hoverSelector) {
+            // A declared hover target that no longer exists is a stale
+            // annotation, not a render failure — record it and move on.
+            try {
+              await page.hover(state.hoverSelector);
+            } catch {
+              runtimeIssues.push({
+                type: 'page-error',
+                message: `hover target not found: ${state.hoverSelector}`,
+                selector: state.hoverSelector,
+              });
+            }
+          }
+          const screenshot = screenshotPath(
+            projectRoot,
+            input.outputDir ?? 'qa',
+            relpath,
+            stateViewport,
+            state.name,
+          );
+          await page.screenshot({ path: screenshot as `${string}.png`, type: 'png', fullPage: false });
+          stateResults.push({
+            state: state.name,
+            viewport: stateViewport,
+            screenshot: normalizeRelpath(path.relative(projectRoot, screenshot)),
+            issues: [...runtimeIssues, ...(await inspectPage(page))],
+          });
+        } finally {
+          await page.close();
+        }
+      }
+    }
   } finally {
     await browser.disconnect();
   }
@@ -312,8 +482,14 @@ export async function runPrototypeAudit(input: {
     file: relpath,
     fileSha256: prototypeSourceSha256(projectRoot, relpath),
     auditedAt: new Date().toISOString(),
-    passed: results.every((result) => result.issues.length === 0),
+    // A state that renders broken fails the page. This is the point of
+    // capturing them: an empty state that collapses to a blank panel is a real
+    // defect, and it was previously invisible to every check in the product.
+    passed:
+      results.every((result) => result.issues.length === 0) &&
+      stateResults.every((result) => result.issues.length === 0),
     viewports: results,
+    ...(stateResults.length > 0 ? { states: stateResults } : {}),
   };
   const receiptPath = prototypeQaReceiptPath(projectRoot, relpath);
   fs.mkdirSync(path.dirname(receiptPath), { recursive: true });

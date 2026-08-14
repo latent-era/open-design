@@ -4733,6 +4733,9 @@ export interface Dict {
   'brandDetail.designSystem': string;
   'brandDetail.brandAssets': string;
   'brandDetail.openProject': string;
+  'brandDetail.rebuildFromProject': string;
+  'brandDetail.rebuildingFromProject': string;
+  'brandDetail.rebuildFromProjectHint': string;
   'brandDetail.themeLight': string;
   'brandDetail.themeDark': string;
   'brandDetail.subjects': string;

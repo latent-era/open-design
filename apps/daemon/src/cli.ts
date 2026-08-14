@@ -342,7 +342,7 @@ const FIGMA_BOOLEAN_FLAGS = new Set([
 // module evaluation — a const declared further down would still be in TDZ.
 const BRAND_STRING_FLAGS = new Set([
   'daemon-url', 'prompt-file', 'project', 'locale',
-  'html-file', 'css-file', 'base-url',
+  'html-file', 'css-file', 'base-url', 'entry-file',
 ]);
 const BRAND_BOOLEAN_FLAGS = new Set([
   'help', 'h', 'json',
@@ -6356,20 +6356,26 @@ async function runBrandExtractFromHtml(rest) {
   }
   const id = positionalArgs(rest, BRAND_STRING_FLAGS)[0];
   if (!id) {
-    console.error('Usage: od brand extract-from-html <id> --html-file <path|-> '
-      + '[--css-file <path>] [--base-url <url>] [--json]');
+    console.error('Usage: od brand extract-from-html <id> (--html-file <path|-> | --project <projectId>) '
+      + '[--entry-file <relpath>] [--css-file <path>] [--base-url <url>] [--json]');
     process.exit(2);
   }
-  let html;
-  try {
-    html = await readFileFlagOrStdin(flags['html-file']);
-  } catch (err) {
-    console.error(`could not read --html-file: ${err.message}`);
-    process.exit(2);
-  }
-  if (!html || !html.trim()) {
-    console.error('--html-file <path|-> is required (the rendered page HTML)');
-    process.exit(2);
+  // --project builds the extractor's inputs from a project the user already
+  // has. The --html-file form needs a rendered document nobody keeps lying
+  // around, which is the reason this command has gone unused.
+  const projectId = typeof flags.project === 'string' ? flags.project.trim() : '';
+  let html = '';
+  if (!projectId) {
+    try {
+      html = await readFileFlagOrStdin(flags['html-file']);
+    } catch (err) {
+      console.error(`could not read --html-file: ${err.message}`);
+      process.exit(2);
+    }
+    if (!html || !html.trim()) {
+      console.error('--html-file <path|-> or --project <projectId> is required');
+      process.exit(2);
+    }
   }
   let css = '';
   if (typeof flags['css-file'] === 'string' && flags['css-file'].length > 0) {
@@ -6380,7 +6386,10 @@ async function runBrandExtractFromHtml(rest) {
       process.exit(2);
     }
   }
-  const body = { html };
+  const body = projectId ? { projectId } : { html };
+  if (projectId && typeof flags['entry-file'] === 'string' && flags['entry-file'].trim()) {
+    body.entryFile = flags['entry-file'].trim();
+  }
   if (css.trim()) body.css = css;
   if (typeof flags['base-url'] === 'string' && flags['base-url'].trim()) {
     body.baseUrl = flags['base-url'].trim();

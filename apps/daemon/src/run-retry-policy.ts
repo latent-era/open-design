@@ -163,6 +163,62 @@ function normalizeAttemptCount(attemptCount: number): number {
   return Math.floor(attemptCount);
 }
 
+// Automatic follow-up turns driven by a dissenting visual-review verdict.
+// Deliberately separate from the transient-failure budget above: that policy
+// suppresses as soon as a tool call or artifact write is seen, which is true by
+// definition here — the page exists, was written, and was then judged wrong.
+// Sharing a counter would let a flaky upstream consume the fix-it attempt, or
+// the reverse.
+export const DEFAULT_VISUAL_REVIEW_RETRY_MAX_ATTEMPTS = 1;
+
+export type VisualReviewRetrySuppressedReason =
+  | 'not_dissenting'
+  | 'cancel_requested'
+  | 'attempt_limit_reached';
+
+export type VisualReviewRetryDecision =
+  | { shouldRetry: true; attemptIndex: number; maxAttempts: number }
+  | {
+      shouldRetry: false;
+      attemptIndex: number;
+      maxAttempts: number;
+      suppressedReason: VisualReviewRetrySuppressedReason;
+    };
+
+/**
+ * Decide whether a dissenting render verdict earns one more turn.
+ *
+ * Only an explicit `not-satisfied` qualifies. `unknown` is what the reviewer
+ * returns when it is unavailable, timed out, or answered unparseably — most
+ * often the local vision host being down — so treating it as dissent would
+ * spend an extra model turn on every run for as long as that host stays
+ * unhealthy, while proving nothing about the page.
+ *
+ * The result is never a failure signal. The caller retries or lets the turn
+ * stand; a probabilistic reviewer must not be able to fail a turn outright.
+ */
+export function decideVisualReviewRetry(input: {
+  verdict: 'satisfied' | 'not-satisfied' | 'unknown' | undefined;
+  attemptCount: number;
+  cancelRequested?: boolean;
+  maxAttempts?: number;
+}): VisualReviewRetryDecision {
+  const attemptCount = normalizeAttemptCount(input.attemptCount);
+  const maxAttempts =
+    input.maxAttempts === undefined
+      ? DEFAULT_VISUAL_REVIEW_RETRY_MAX_ATTEMPTS
+      : normalizeAttemptCount(input.maxAttempts);
+  const base = { attemptIndex: attemptCount + 1, maxAttempts };
+  const suppress = (
+    suppressedReason: VisualReviewRetrySuppressedReason,
+  ): VisualReviewRetryDecision => ({ ...base, shouldRetry: false, suppressedReason });
+
+  if (input.verdict !== 'not-satisfied') return suppress('not_dissenting');
+  if (input.cancelRequested) return suppress('cancel_requested');
+  if (attemptCount >= maxAttempts) return suppress('attempt_limit_reached');
+  return { ...base, shouldRetry: true };
+}
+
 function normalizeMaxAttempts(maxAttempts: number | undefined): number {
   if (maxAttempts === undefined) return DEFAULT_SAFE_RUN_RETRY_MAX_ATTEMPTS;
   if (!Number.isFinite(maxAttempts) || maxAttempts < 0) return 0;
