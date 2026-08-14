@@ -18,8 +18,10 @@ describe('run finish ordering', () => {
       path.join(import.meta.dirname, '../src/server.ts'),
       'utf8',
     );
-    const snapshotAt = src.indexOf('await snapshotAiHtmlVersionsBeforeSuccess()');
-    const gateAt = src.indexOf('const qaFailures = prototypeQaFailuresBeforeSuccess()');
+    // Matched on the call, not its exact wording: this pins an ordering
+    // invariant, and it should not go red because a call gained an `await`.
+    const snapshotAt = src.indexOf('snapshotAiHtmlVersionsBeforeSuccess()');
+    const gateAt = src.indexOf('const qaFailures =');
 
     expect(snapshotAt).toBeGreaterThan(-1);
     expect(gateAt).toBeGreaterThan(-1);

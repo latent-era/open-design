@@ -85,7 +85,12 @@ import {
   isBrowserUseRequested,
   renderBrowserUseUnavailablePrompt,
 } from './browser/index.js';
-import { listProjectHtmlFiles, partitionPrototypeQaFiles, validatePrototypeQaReceipts } from './prototype-qa.js';
+import {
+  listProjectHtmlFiles,
+  partitionPrototypeQaFiles,
+  runPrototypeAudit,
+  validatePrototypeQaReceipts,
+} from './prototype-qa.js';
 import {
   UPLOAD_DIR,
   composeLiveInstructionPrompt,
@@ -9573,7 +9578,7 @@ export async function startServer({
         }
       }
     };
-    const prototypeQaFailuresBeforeSuccess = () => {
+    const prototypeQaFailuresBeforeSuccess = async () => {
       if (process.env.OD_PROTOTYPE_QA_REQUIRED !== '1' || executionProfile !== 'filesystem') return [];
       const outcome = resolveRunArtifactOutcomeBeforeFinish();
       if (!outcome?.diff || !outcome.projectRoot) return [];
@@ -9620,11 +9625,41 @@ export async function startServer({
       });
       run.prototypeQaAdvisory = advisory;
       if (blocking.length === 0) return [];
-      return validatePrototypeQaReceipts({
+      const validate = () => validatePrototypeQaReceipts({
         projectRoot: outcome.projectRoot,
         htmlFiles: blocking,
         ...(modifiedAfterMs > 0 ? { modifiedAfterMs } : {}),
       });
+      const pending = validate();
+      if (pending.length === 0) return [];
+      // Run the audit here rather than failing the turn for not having one.
+      //
+      // The agent is told this is mandatory, but whether it actually runs the
+      // command is a model decision, and the gate fails closed — so a turn
+      // whose edit succeeded gets reported as "Run failed" purely because the
+      // audit step was skipped. That is the exact complaint this verification
+      // was built to remove, arriving through a different door.
+      //
+      // Auditing here does not weaken the gate: a real failure still fails the
+      // turn, now with a screenshot and a specific reason instead of a
+      // bookkeeping error. Only the "nobody ran it" case changes.
+      for (const relpath of blocking) {
+        try {
+          await runPrototypeAudit({
+            projectRoot: outcome.projectRoot,
+            projectId: run.projectId,
+            relpath,
+          });
+        } catch (err) {
+          // Audit could not run at all (no browser, unreachable page). Leave
+          // the original receipt failure to be reported rather than masking it.
+          console.warn(
+            `[qa] managed audit could not run for ${relpath}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      return validate();
     };
     // Chain onto the run service's terminal chokepoint so startup rejection,
     // direct cancellation, shutdown, and every explicit finish path all consume
@@ -13281,7 +13316,7 @@ export async function startServer({
           design.runs.finish(run, 'failed', 1, signal);
           return;
         }
-        const qaFailures = prototypeQaFailuresBeforeSuccess();
+        const qaFailures = await prototypeQaFailuresBeforeSuccess();
         if (qaFailures.length > 0) {
           const summary = qaFailures
             .slice(0, 8)
