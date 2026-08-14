@@ -389,18 +389,40 @@ export function validatePrototypeQaReceipts(input: {
  *  still carries real evidence rather than none. When no page is in focus
  *  nothing blocks; failing against an arbitrarily chosen page would be worse
  *  than reporting. */
+/**
+ * Split the affected pages into what BLOCKS, what is merely reported, and
+ * what gets VERIFIED.
+ *
+ * `blocking` stays deliberately narrow — one page — so that editing a shared
+ * stylesheet cannot demand an audit of every screen before a turn may finish.
+ *
+ * `verify` is a separate question and must not be tied to it. Pages that were
+ * not blocking were previously never rendered or looked at, so a screen the
+ * run rewrote could ship unseen while the turn reported success. Verification
+ * therefore covers the focused page plus every HTML page the run actually
+ * wrote — bounded by the edit, not by how many pages the stylesheet touches.
+ */
 export function partitionPrototypeQaFiles(input: {
   htmlFiles: string[];
   focusedFile: string | null;
-}): { blocking: string[]; advisory: string[] } {
+  changedFiles?: string[];
+}): { blocking: string[]; advisory: string[]; verify: string[] } {
   const focused = input.focusedFile ? normalizeRelpath(input.focusedFile) : null;
   const files = input.htmlFiles.map((file) => normalizeRelpath(file));
-  if (!focused || !files.includes(focused)) {
-    return { blocking: [], advisory: files };
+  const changed = (input.changedFiles ?? [])
+    .map((file) => normalizeRelpath(file))
+    .filter((file) => files.includes(file));
+
+  const hasFocus = Boolean(focused && files.includes(focused));
+  const verify = [...new Set([...(hasFocus ? [focused as string] : []), ...changed])];
+
+  if (!hasFocus) {
+    return { blocking: [], advisory: files, verify };
   }
   return {
-    blocking: [focused],
+    blocking: [focused as string],
     advisory: files.filter((file) => file !== focused),
+    verify,
   };
 }
 

@@ -9579,6 +9579,58 @@ export async function startServer({
         }
       }
     };
+    /**
+     * Render each page and read the result. Deterministic, daemon-side, and
+     * never contingent on the agent choosing to run the audit — which it does
+     * on small focused turns and skips on large ones, exactly when a regression
+     * is most likely.
+     *
+     * A page whose receipt is already current is skipped: nothing changed, so
+     * there is nothing new to look at. Failures here never throw; a page that
+     * cannot be rendered leaves its receipt stale, which the gate reports.
+     */
+    const verifiedPages = new Set();
+    const verifyPagesVisually = async (pages, projectRoot, modifiedAfterMs) => {
+      for (const relpath of pages) {
+        if (verifiedPages.has(relpath)) continue;
+        verifiedPages.add(relpath);
+        const stale = validatePrototypeQaReceipts({
+          projectRoot,
+          htmlFiles: [relpath],
+          ...(modifiedAfterMs > 0 ? { modifiedAfterMs } : {}),
+        });
+        if (stale.length === 0) continue;
+        try {
+          const receipt = await runPrototypeAudit({
+            projectRoot,
+            projectId: run.projectId,
+            relpath,
+          });
+          const shot = receipt?.viewports?.find((v) => v.screenshot)?.screenshot;
+          const latestRequest = latestRunPromptForHtmlVersionSnapshot().prompt;
+          if (!shot || !latestRequest) continue;
+          const review = await reviewRenderedPage({
+            screenshotPath: path.resolve(projectRoot, shot),
+            request: latestRequest,
+            localEndpoint: process.env.LOCAL_LLM_DEV_URL,
+            localModel: process.env.OD_VISUAL_REVIEW_MODEL ?? 'qwen3.6-35b',
+            codexScriptPath: process.env.OD_VISUAL_REVIEW_CODEX_SCRIPT,
+          });
+          if (!review) continue;
+          // Keep the first dissenting verdict rather than the last page's, so
+          // one screen reading wrong is not overwritten by a later one passing.
+          if (!run.visualReview || review.verdict === 'not-satisfied') {
+            run.visualReview = { ...review, file: relpath };
+          }
+        } catch (err) {
+          console.warn(
+            `[qa] managed verification failed for ${relpath}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+    };
+
     const prototypeQaFailuresBeforeSuccess = async () => {
       if (process.env.OD_PROTOTYPE_QA_REQUIRED !== '1' || executionProfile !== 'filesystem') return [];
       const outcome = resolveRunArtifactOutcomeBeforeFinish();
@@ -9620,11 +9672,19 @@ export async function startServer({
         typeof projectRecord?.metadata?.entryFile === 'string'
           ? projectRecord.metadata.entryFile.replaceAll('\\', '/')
           : null;
-      const { blocking, advisory } = partitionPrototypeQaFiles({
+      const { blocking, advisory, verify } = partitionPrototypeQaFiles({
         htmlFiles: [...new Set(htmlFiles)],
         focusedFile: openPreviewFile ?? editedHtml ?? configuredEntryFile ?? null,
+        changedFiles: changedHtml,
       });
       run.prototypeQaAdvisory = advisory;
+
+      // Verification is unconditional and does not depend on the agent having
+      // remembered to audit. Every page the run wrote is rendered and read,
+      // whether or not it is the page that can fail the turn — a screen the
+      // run rewrote used to ship unseen while the turn reported success.
+      await verifyPagesVisually(verify, outcome.projectRoot, modifiedAfterMs);
+
       if (blocking.length === 0) return [];
       const validate = () => validatePrototypeQaReceipts({
         projectRoot: outcome.projectRoot,
@@ -9644,41 +9704,7 @@ export async function startServer({
       // Auditing here does not weaken the gate: a real failure still fails the
       // turn, now with a screenshot and a specific reason instead of a
       // bookkeeping error. Only the "nobody ran it" case changes.
-      for (const relpath of blocking) {
-        try {
-          const receipt = await runPrototypeAudit({
-            projectRoot: outcome.projectRoot,
-            projectId: run.projectId,
-            relpath,
-          });
-          // Ask a vision model whether the render actually shows what was
-          // asked for. The geometry checks above catch measurable defects;
-          // this catches a turn describing a change it never rendered.
-          // Advisory only — a probabilistic judgement must not fail a turn.
-          const shot = receipt?.viewports?.find((v) => v.screenshot)?.screenshot;
-          const latestRequest = latestRunPromptForHtmlVersionSnapshot().prompt;
-          if (shot && latestRequest) {
-            try {
-              run.visualReview = await reviewRenderedPage({
-                screenshotPath: path.resolve(outcome.projectRoot, shot),
-                request: latestRequest,
-                localEndpoint: process.env.LOCAL_LLM_DEV_URL,
-                localModel: process.env.OD_VISUAL_REVIEW_MODEL ?? 'qwen3.6-35b',
-                codexScriptPath: process.env.OD_VISUAL_REVIEW_CODEX_SCRIPT,
-              }) ?? undefined;
-            } catch (err) {
-              console.warn('[qa] visual review failed:', err instanceof Error ? err.message : err);
-            }
-          }
-        } catch (err) {
-          // Audit could not run at all (no browser, unreachable page). Leave
-          // the original receipt failure to be reported rather than masking it.
-          console.warn(
-            `[qa] managed audit could not run for ${relpath}:`,
-            err instanceof Error ? err.message : err,
-          );
-        }
-      }
+      await verifyPagesVisually(blocking, outcome.projectRoot, modifiedAfterMs);
       return validate();
     };
     // Chain onto the run service's terminal chokepoint so startup rejection,

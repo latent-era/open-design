@@ -636,6 +636,9 @@ export interface VisualReview {
   verdict: 'satisfied' | 'not-satisfied' | 'unknown';
   note: string;
   reviewer?: 'local' | 'codex';
+  /** Which page was reviewed. A run can write several screens, and the
+   *  verdict is useless without knowing which one it is about. */
+  file?: string;
 }
 
 export interface ChatRunStatusResponse {
