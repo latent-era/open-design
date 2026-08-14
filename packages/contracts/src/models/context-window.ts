@@ -23,6 +23,10 @@ export const MODEL_CONTEXT_WINDOW: Record<string, number> = {
   'gemini-2.5-flash': 1_000_000,
   'qwen3.6-35b': 65_536, // 196608 / --parallel 3
   'qwen3.6-27b': 98_304, // 196608 / --parallel 2
+  // ds4-server is a separate binary from llama-server and does not share the
+  // Qwen pool; its window comes from its own --ctx flag.
+  'deepseek-v4-flash-0731-q2': 262_144,
+  'gpt-5.6-sol': 1_000_000,
 };
 
 /** Fraction of the window past which the meter warns. */
@@ -37,9 +41,22 @@ export interface ContextUsage {
   level: ContextUsageLevel;
 }
 
+/**
+ * Look up a model's window, tolerating the provider prefix.
+ *
+ * Open Design addresses local models as `<provider>/<model>` — for example
+ * `qwen_local/qwen3.6-35b` — while these figures are keyed by the bare model
+ * id shared with the Talos app. Without the fallback every local conversation
+ * resolves to an unknown window and the meter silently never renders, which
+ * looks identical to "no usage reported yet".
+ */
 export function contextWindowForModel(model: string | null | undefined): number | null {
   if (!model) return null;
-  return MODEL_CONTEXT_WINDOW[model] ?? null;
+  const exact = MODEL_CONTEXT_WINDOW[model];
+  if (typeof exact === 'number') return exact;
+  const slash = model.lastIndexOf('/');
+  if (slash === -1) return null;
+  return MODEL_CONTEXT_WINDOW[model.slice(slash + 1)] ?? null;
 }
 
 /**

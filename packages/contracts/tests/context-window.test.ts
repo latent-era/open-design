@@ -62,3 +62,29 @@ describe('contextUsage', () => {
     expect(contextUsage({ inputTokens: null, model: 'qwen3.6-35b' })).toBeNull();
   });
 });
+
+describe('provider-prefixed model ids', () => {
+  it('resolves the ids the daemon actually reports', () => {
+    // Open Design addresses local models as `<provider>/<model>`
+    // (qwen_local/qwen3.6-35b), while the window figures are keyed by the bare
+    // model. Without stripping, every local conversation has an unknown window
+    // and the meter silently never renders.
+    expect(contextWindowForModel('qwen_local/qwen3.6-35b')).toBe(65_536);
+    expect(contextWindowForModel('qwen_local/qwen3.6-27b')).toBe(98_304);
+  });
+
+  it('knows the DeepSeek runtime, which has its own context flag', () => {
+    // ds4-server is a separate binary started with --ctx 262144; it does not
+    // share the llama-server pool the Qwen figures come from.
+    expect(contextWindowForModel('deepseek_local/deepseek-v4-flash-0731-q2'))
+      .toBe(262_144);
+  });
+
+  it('still resolves a bare id', () => {
+    expect(contextWindowForModel('qwen3.6-35b')).toBe(65_536);
+  });
+
+  it('does not invent a window for an unknown prefixed model', () => {
+    expect(contextWindowForModel('qwen_local/some-future-model')).toBeNull();
+  });
+});
