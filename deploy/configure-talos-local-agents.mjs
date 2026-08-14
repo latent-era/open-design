@@ -44,11 +44,29 @@ const openCodeConfig = {
       // pool across `--parallel` slots. Keep them in step with
       // ~/llama-swap/config.yaml — a limit larger than the server's is worse
       // than none, because it promises room that does not exist.
+      //
+      // `attachment` / `modalities` declare that these models can read images.
+      // Both are served with a multimodal projector (`--mmproj` in
+      // ~/llama-swap/config.yaml), but OpenCode assumes text-only unless told
+      // otherwise and refuses the attachment outright — the model answers "this
+      // model does not support image input" while the server is perfectly
+      // capable. Keep these in step with the projector flags: claiming vision a
+      // server cannot provide fails at request time instead of politely.
       models: {
         // -c 196608 / --parallel 2
-        'qwen3.6-27b': { name: 'Qwen 3.6 27B', limit: { context: 98304, output: 8192 } },
+        'qwen3.6-27b': {
+          name: 'Qwen 3.6 27B',
+          limit: { context: 98304, output: 8192 },
+          attachment: true,
+          modalities: { input: ['text', 'image'], output: ['text'] },
+        },
         // -c 196608 / --parallel 3
-        'qwen3.6-35b': { name: 'Qwen 3.6 35B', limit: { context: 65536, output: 8192 } },
+        'qwen3.6-35b': {
+          name: 'Qwen 3.6 35B',
+          limit: { context: 65536, output: 8192 },
+          attachment: true,
+          modalities: { input: ['text', 'image'], output: ['text'] },
+        },
       },
     },
     deepseek_local: {
