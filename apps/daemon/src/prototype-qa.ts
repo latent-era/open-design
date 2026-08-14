@@ -397,3 +397,28 @@ export function partitionPrototypeQaFiles(input: {
     advisory: files.filter((file) => file !== focused),
   };
 }
+
+/**
+ * Default directory for audit screenshots, relative to `projectRoot`.
+ *
+ * Screenshots are daemon-managed data, so they belong under the data root
+ * rather than beside the agent's working directory. The previous default
+ * (`qa`, resolved against cwd) becomes `/app/qa` in the packaged container,
+ * where the image root is read-only — the audit died on mkdir and the QA gate
+ * then failed every turn whose edit had already been written.
+ *
+ * The writer resolves this under `projectRoot` and refuses to escape it, so a
+ * data dir outside the project cannot be expressed; that falls back to the
+ * conventional `.od` root rather than producing a path the writer will reject.
+ */
+export function defaultPrototypeAuditOutputDir(
+  projectRoot: string,
+  dataDir: string | undefined,
+): string {
+  const fallback = path.join('.od', 'qa');
+  const trimmed = dataDir?.trim();
+  if (!trimmed) return fallback;
+  const relative = path.relative(path.resolve(projectRoot), path.resolve(trimmed));
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return fallback;
+  return path.join(relative, 'qa');
+}

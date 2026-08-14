@@ -3021,13 +3021,6 @@ export function ChatPane({
             <ContextMeter
               usage={contextUsageForConversation}
               {...(onCompactContext ? { onCompact: onCompactContext } : {})}
-              compacting={compactingContext}
-            />
-          </div>
-          <div ref={contextMeterRef}>
-            <ContextMeter
-              usage={contextUsageForConversation}
-              {...(onCompactContext ? { onCompact: onCompactContext } : {})}
               compacting={compactingContext ?? false}
               stage={compactionStage(displayMessages)}
             />

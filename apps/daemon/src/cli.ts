@@ -20,7 +20,7 @@ import { SIDECAR_ENV, SIDECAR_MESSAGES } from '@open-design/sidecar-proto';
 import { EXPORT_FORMATS, EXPORT_IMAGE_FORMATS } from '@open-design/contracts';
 import { buildExportCliRequestBody, buildExportCliResultEnvelope, resolveExportCliDeckMode } from './export-cli-request.js';
 import { exportRoutePath } from './export-cli-routing.js';
-import { runPrototypeAudit } from './prototype-qa.js';
+import { defaultPrototypeAuditOutputDir, runPrototypeAudit } from './prototype-qa.js';
 import {
   AGENT_SLUGS,
   isAgentSlug,
@@ -437,7 +437,7 @@ ligatures, undersized controls, or broken internal links.
 Options:
   --project <id>          Project id (or OD_PROJECT_ID)
   --file <path>           Project-relative HTML file
-  --output-dir <path>     Screenshot directory (default: qa)
+  --output-dir <path>     Screenshot directory (default: <data dir>/qa)
   --browser-ws-url <url>  Override OD_BROWSERLESS_WS_URL
   --preview-origin <url>  Override OD_BROWSERLESS_PREVIEW_ORIGIN
   --json                  Print the full machine-readable receipt`);
@@ -473,7 +473,8 @@ async function runPreview(args) {
       projectRoot: process.cwd(),
       projectId,
       relpath: file,
-      ...(flags['output-dir'] ? { outputDir: flags['output-dir'] } : {}),
+      outputDir: flags['output-dir']
+        ?? defaultPrototypeAuditOutputDir(process.cwd(), process.env.OD_DATA_DIR),
       ...(flags['browser-ws-url'] ? { browserWsUrl: flags['browser-ws-url'] } : {}),
       ...(flags['preview-origin'] ? { previewOrigin: flags['preview-origin'] } : {}),
     });
