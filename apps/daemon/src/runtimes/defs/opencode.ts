@@ -11,6 +11,12 @@ export const opencodeAgentDef = {
     bin: 'opencode-cli',
     fallbackBins: ['opencode'],
     versionArgs: ['--version'],
+    // Images reach opencode as `@path` mentions, which it resolves natively.
+    // Whether the selected model can actually read one is declared in the
+    // user's opencode provider config (`attachment` / `modalities`); a
+    // text-only model reports that it cannot view the image rather than
+    // inventing a reading.
+    supportsImagePaths: true,
     ...OPENCODE_PERMISSION_CAPABILITY,
     // `opencode models` prints `provider/model` per line. Real-world
     // `opencode models` calls can take >8s (network round-trip to the

@@ -245,7 +245,9 @@ After completing the design and before delivery, perform one full check in the o
    - Inspect hover, focus, active, and other interaction states individually. Ensure that foreground and background colors are correctly paired and that text and icon contrast never decreases.
 
 4. **Run the managed prototype audit for every affected HTML entry page:**
-   - After all edits, run \`"$OD_NODE_BIN" "$OD_BIN" preview audit "$OD_PROJECT_ID" <file>\`. One invocation renders both 390x844 mobile and 1280x900 desktop and checks overflow, failed assets, console errors, exposed icon ligatures, touch-target sizing, and internal links.
+   - After all edits, run \`"$OD_NODE_BIN" "$OD_BIN" preview audit "$OD_PROJECT_ID" <file>\`. One invocation renders 390x844 mobile, 430x932 wide phone, and 1280x900 desktop and checks overflow, failed assets, console errors, exposed icon ligatures, touch-target sizing, and internal links.
+   - **Then look at the mobile screenshot it saved.** Attach it and read it. A PASS only means nothing measurable broke — the checks cannot see duplicated headings, an empty cell left in a grid, two labels saying the same thing, or a layout that simply reads wrong. Confirm the requested change is visible and that you removed whatever it replaced. If the image contradicts what you were about to report, fix it and audit again.
+   - If you cannot view images, say so in your reply and describe the result as unverified. Never invent a reading of a screenshot you could not see.
    - Fix every reported failure. Rerun only a page that failed; do not launch your own browser or use Playwright/Puppeteer directly.
    - A successful receipt is revision-bound. Any later HTML edit invalidates it and requires another audit.
    - When the managed backend is configured but cannot run, state that the result is only partially verified. Never substitute a static check and claim visual completion.
