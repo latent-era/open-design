@@ -255,7 +255,7 @@ export async function runPrototypeAudit(input: {
   viewports?: readonly PrototypeQaViewport[];
 }): Promise<PrototypeQaReceipt> {
   const projectRoot = path.resolve(input.projectRoot);
-  const relpath = normalizeRelpath(input.relpath);
+  const relpath = normalizeRelpath(toProjectRelativePagePath(projectRoot, input.relpath));
   const filePath = safeProjectFile(projectRoot, relpath);
   if (!fs.existsSync(filePath)) throw new Error(`prototype file not found: ${relpath}`);
   const browserWsUrl = input.browserWsUrl || process.env.OD_BROWSERLESS_WS_URL;
@@ -398,27 +398,54 @@ export function partitionPrototypeQaFiles(input: {
   };
 }
 
+
 /**
- * Default directory for audit screenshots, relative to `projectRoot`.
+ * The directory the audit should treat as the project root.
  *
- * Screenshots are daemon-managed data, so they belong under the data root
- * rather than beside the agent's working directory. The previous default
- * (`qa`, resolved against cwd) becomes `/app/qa` in the packaged container,
- * where the image root is read-only — the audit died on mkdir and the QA gate
- * then failed every turn whose edit had already been written.
+ * Everything the audit writes hangs off this: the screenshot directory, the
+ * receipt directory (`<root>/.open-design/qa`), and the resolution of the
+ * page's own relative path. Defaulting it to the agent's working directory
+ * breaks in the packaged container, where that is the read-only image root —
+ * the audit dies on mkdir and the QA gate then fails turns whose edit has
+ * already been written to disk.
  *
- * The writer resolves this under `projectRoot` and refuses to escape it, so a
- * data dir outside the project cannot be expressed; that falls back to the
- * conventional `.od` root rather than producing a path the writer will reject.
+ * Managed projects live under the data root, which is the writable volume.
+ * Falls back to the working directory when the project is not there, so
+ * imported-folder projects and callers already running from a project cwd keep
+ * working.
  */
-export function defaultPrototypeAuditOutputDir(
-  projectRoot: string,
+export function resolvePrototypeAuditProjectRoot(
+  cwd: string,
   dataDir: string | undefined,
+  projectId: string | undefined,
 ): string {
-  const fallback = path.join('.od', 'qa');
-  const trimmed = dataDir?.trim();
-  if (!trimmed) return fallback;
-  const relative = path.relative(path.resolve(projectRoot), path.resolve(trimmed));
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return fallback;
-  return path.join(relative, 'qa');
+  if (!projectId) return cwd;
+  const root = dataDir?.trim() ? path.resolve(dataDir) : path.join(path.resolve(cwd), '.od');
+  const candidate = path.join(root, 'projects', projectId);
+  try {
+    if (fs.statSync(candidate).isDirectory()) return candidate;
+  } catch {
+    // Not a managed project directory — fall through.
+  }
+  return cwd;
+}
+
+/**
+ * Reduce a page path to the project-relative form the receipt is keyed by.
+ *
+ * The receipt filename is derived from this value, and the daemon's QA gate
+ * looks receipts up by the project-relative path. An absolute path left
+ * unnormalized therefore writes a receipt under a name the gate never checks,
+ * and the page reads as unverified however many times the audit is run.
+ *
+ * Paths outside the project are returned untouched so the writer's escape
+ * check still rejects them, rather than being quietly rewritten into a
+ * successful audit of the wrong file.
+ */
+export function toProjectRelativePagePath(projectRoot: string, pagePath: string): string {
+  if (!path.isAbsolute(pagePath)) return pagePath;
+  const root = path.resolve(projectRoot);
+  const full = path.resolve(pagePath);
+  if (full !== root && !full.startsWith(`${root}${path.sep}`)) return pagePath;
+  return path.relative(root, full).split(path.sep).join('/');
 }
