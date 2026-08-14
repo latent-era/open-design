@@ -3455,6 +3455,7 @@ export const ko: Dict = {
   'assistant.workingLabel': '작업 중',
   'assistant.doneLabel': '완료됨',
   'assistant.prototypeQaAdvisory': '{count}개 화면이 시각적으로 확인되지 않음',
+  'assistant.visualReviewMismatch': '결과가 요청과 다를 수 있음',
   'assistant.copyMarkdown': '응답 Markdown 복사',
   'assistant.forkConversation': '여기서 포크',
   'assistant.forkingConversation': '포크 중…',

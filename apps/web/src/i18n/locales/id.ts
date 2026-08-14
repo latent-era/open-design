@@ -3455,6 +3455,7 @@ export const id: Dict = {
   'assistant.workingLabel': 'Sedang bekerja',
   'assistant.doneLabel': 'Selesai',
   'assistant.prototypeQaAdvisory': '{count} layar belum diperiksa secara visual',
+  'assistant.visualReviewMismatch': 'tampilan mungkin tidak sesuai permintaan',
   'assistant.copyMarkdown': 'Salin Markdown respons',
   'assistant.forkConversation': 'Fork dari sini',
   'assistant.forkingConversation': 'Membuat fork…',

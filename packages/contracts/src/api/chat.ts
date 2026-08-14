@@ -629,6 +629,15 @@ export interface RunFileVersion {
   previousVersionId: string | null;
 }
 
+/** A vision model's verdict on a rendered page. `unknown` covers both "the
+ *  model would not commit" and "no reviewer was reachable" — neither may be
+ *  read as approval. */
+export interface VisualReview {
+  verdict: 'satisfied' | 'not-satisfied' | 'unknown';
+  note: string;
+  reviewer?: 'local' | 'codex';
+}
+
 export interface ChatRunStatusResponse {
   id: string;
   projectId: string | null;
@@ -923,6 +932,10 @@ export interface ChatMessage {
   /** Set once this turn's changes have been rewound, so the control renders
    *  as spent instead of offering a second undo to a point that is gone. */
   undoneAt?: number;
+  /** A vision model's read of the rendered page against what was asked.
+   *  Advisory: a probabilistic judgement must not block a turn, but it does
+   *  surface a turn that reported work its own screenshot contradicts. */
+  visualReview?: VisualReview;
   feedback?: ChatMessageFeedback;
   /**
    * Request-only marker for the final assistant-message persistence pass.

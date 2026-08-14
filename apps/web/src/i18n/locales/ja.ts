@@ -3455,6 +3455,7 @@ export const ja: Dict = {
   'assistant.workingLabel': '作業中',
   'assistant.doneLabel': '完了',
   'assistant.prototypeQaAdvisory': '{count} 件の画面は視覚的に未確認',
+  'assistant.visualReviewMismatch': '表示が依頼内容と一致しない可能性',
   'assistant.copyMarkdown': '応答のMarkdownをコピー',
   'assistant.forkConversation': 'ここからフォーク',
   'assistant.forkingConversation': 'フォーク中…',

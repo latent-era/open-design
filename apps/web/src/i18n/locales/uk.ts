@@ -3455,6 +3455,7 @@ export const uk: Dict = {
   'assistant.workingLabel': 'Роботи',
   'assistant.doneLabel': 'Готово',
   'assistant.prototypeQaAdvisory': '{count} екранів не перевірено візуально',
+  'assistant.visualReviewMismatch': 'результат може не відповідати запиту',
   'assistant.copyMarkdown': 'Скопіювати Markdown відповіді',
   'assistant.forkConversation': 'Створити форк звідси',
   'assistant.forkingConversation': 'Створення форка…',

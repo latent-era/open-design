@@ -1099,6 +1099,10 @@ function AssistantMessageImpl({
                   endedAt: message.endedAt,
                   durationMs: usage?.durationMs,
                   advisoryCount: message.prototypeQaAdvisory?.length ?? 0,
+                  visualReviewNote:
+                    message.visualReview?.verdict === 'not-satisfied'
+                      ? message.visualReview.note
+                      : undefined,
                   undoProjectId: projectId,
                   undoMessageId: message.id,
                   canUndo: (message.fileVersions?.length ?? 0) > 0 && !message.undoneAt,
@@ -1125,6 +1129,11 @@ function AssistantMessageImpl({
                 endedAt={message.endedAt}
                 durationMs={usage?.durationMs}
                 advisoryCount={message.prototypeQaAdvisory?.length ?? 0}
+                visualReviewNote={
+                  message.visualReview?.verdict === 'not-satisfied'
+                    ? message.visualReview.note
+                    : undefined
+                }
                 undoProjectId={projectId}
                 undoMessageId={message.id}
                 canUndo={(message.fileVersions?.length ?? 0) > 0 && !message.undoneAt}
@@ -1583,6 +1592,10 @@ interface AssistantFooterProps {
   // verification gates on the focused page alone, so the turn succeeded and
   // these are reported rather than enforced.
   advisoryCount?: number;
+  /** Set when a vision model read the render as NOT showing what was asked.
+   *  Advisory: it reports a turn whose own screenshot contradicts it, and
+   *  never blocks. */
+  visualReviewNote?: string | undefined;
   // Undo is offered only when this turn actually versioned files and has not
   // already been rewound. Both come from the run's recorded versions, so a
   // prose-only turn shows no control at all.
@@ -1609,6 +1622,7 @@ function AssistantFooter({
   endedAt,
   durationMs,
   advisoryCount = 0,
+  visualReviewNote,
   undoProjectId = null,
   undoMessageId,
   canUndo = false,
@@ -1658,6 +1672,11 @@ function AssistantFooter({
           {advisoryCount > 0 ? (
             <span className="assistant-qa-advisory">
               {t("assistant.prototypeQaAdvisory", { count: advisoryCount })}
+            </span>
+          ) : null}
+          {visualReviewNote ? (
+            <span className="assistant-qa-advisory" data-testid="assistant-visual-review">
+              {t("assistant.visualReviewMismatch")}
             </span>
           ) : null}
         </>

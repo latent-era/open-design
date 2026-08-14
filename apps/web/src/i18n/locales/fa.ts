@@ -3455,6 +3455,7 @@ export const fa: Dict = {
   'assistant.workingLabel': 'در حال کار',
   'assistant.doneLabel': 'انجام شد',
   'assistant.prototypeQaAdvisory': '{count} صفحه به‌صورت بصری بررسی نشده',
+  'assistant.visualReviewMismatch': 'نمایش ممکن است با درخواست مطابقت نداشته باشد',
   'assistant.copyMarkdown': 'کپی Markdown پاسخ',
   'assistant.forkConversation': 'فورک از اینجا',
   'assistant.forkingConversation': 'در حال فورک…',

@@ -3455,6 +3455,7 @@ export const ptBR: Dict = {
   'assistant.workingLabel': 'Trabalhando',
   'assistant.doneLabel': 'Concluído',
   'assistant.prototypeQaAdvisory': '{count} telas sem verificação visual',
+  'assistant.visualReviewMismatch': 'o resultado pode não corresponder ao pedido',
   'assistant.copyMarkdown': 'Copiar Markdown da resposta',
   'assistant.forkConversation': 'Bifurcar daqui',
   'assistant.forkingConversation': 'Bifurcando…',

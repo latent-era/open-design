@@ -3660,6 +3660,7 @@ export const zhTW: Dict = {
   "assistant.workingLabel": "執行中",
   "assistant.doneLabel": "已完成",
   "assistant.prototypeQaAdvisory": "{count} 個畫面未經視覺檢查",
+  "assistant.visualReviewMismatch": "呈現結果可能與請求不符",
   "assistant.copyMarkdown": "複製回覆 Markdown",
   "assistant.forkConversation": "從這裡分叉",
   "assistant.forkingConversation": "正在分叉…",

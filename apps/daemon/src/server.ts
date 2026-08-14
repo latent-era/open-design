@@ -485,6 +485,7 @@ import {
   snapshotAiHtmlVersionsForRun,
 } from './run-file-version-snapshots.js';
 import { runFileVersionsFromSnapshots } from './run-undo.js';
+import { reviewRenderedPage } from './visual-review.js';
 import { pendingUndoPromptSection, type PendingUndo } from './prompts/pending-undo.js';
 import { reportRunCompletedFromDaemon } from './langfuse-bridge.js';
 import { reconcileDurableRunTerminals } from './runtimes/run-terminal-reconciliation.js';
@@ -9645,11 +9646,30 @@ export async function startServer({
       // bookkeeping error. Only the "nobody ran it" case changes.
       for (const relpath of blocking) {
         try {
-          await runPrototypeAudit({
+          const receipt = await runPrototypeAudit({
             projectRoot: outcome.projectRoot,
             projectId: run.projectId,
             relpath,
           });
+          // Ask a vision model whether the render actually shows what was
+          // asked for. The geometry checks above catch measurable defects;
+          // this catches a turn describing a change it never rendered.
+          // Advisory only — a probabilistic judgement must not fail a turn.
+          const shot = receipt?.viewports?.find((v) => v.screenshot)?.screenshot;
+          const latestRequest = latestRunPromptForHtmlVersionSnapshot().prompt;
+          if (shot && latestRequest) {
+            try {
+              run.visualReview = await reviewRenderedPage({
+                screenshotPath: path.resolve(outcome.projectRoot, shot),
+                request: latestRequest,
+                localEndpoint: process.env.LOCAL_LLM_DEV_URL,
+                localModel: process.env.OD_VISUAL_REVIEW_MODEL ?? 'qwen3.6-35b',
+                codexScriptPath: process.env.OD_VISUAL_REVIEW_CODEX_SCRIPT,
+              }) ?? undefined;
+            } catch (err) {
+              console.warn('[qa] visual review failed:', err instanceof Error ? err.message : err);
+            }
+          }
         } catch (err) {
           // Audit could not run at all (no browser, unreachable page). Leave
           // the original receipt failure to be reported rather than masking it.

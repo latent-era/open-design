@@ -3455,6 +3455,7 @@ export const it: Dict = {
   'assistant.workingLabel': 'In corso',
   'assistant.doneLabel': 'Completato',
   'assistant.prototypeQaAdvisory': '{count} schermate non verificate visivamente',
+  'assistant.visualReviewMismatch': 'il risultato potrebbe non corrispondere alla richiesta',
   'assistant.copyMarkdown': 'Copia il Markdown della risposta',
   'assistant.forkConversation': 'Fork da qui',
   'assistant.forkingConversation': 'Creazione fork…',

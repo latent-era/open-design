@@ -3455,6 +3455,7 @@ export const pl: Dict = {
   'assistant.workingLabel': 'Pracuję',
   'assistant.doneLabel': 'Gotowe',
   'assistant.prototypeQaAdvisory': '{count} ekranów niesprawdzonych wizualnie',
+  'assistant.visualReviewMismatch': 'wynik może nie odpowiadać prośbie',
   'assistant.copyMarkdown': 'Kopiuj Markdown odpowiedzi',
   'assistant.forkConversation': 'Fork od tego miejsca',
   'assistant.forkingConversation': 'Tworzenie forka…',

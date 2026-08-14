@@ -3455,6 +3455,7 @@ export const hu: Dict = {
   'assistant.workingLabel': 'Dolgozik',
   'assistant.doneLabel': 'Kész',
   'assistant.prototypeQaAdvisory': '{count} képernyő vizuálisan nincs ellenőrizve',
+  'assistant.visualReviewMismatch': 'a megjelenítés eltérhet a kéréstől',
   'assistant.copyMarkdown': 'Válasz Markdown másolása',
   'assistant.forkConversation': 'Fork innen',
   'assistant.forkingConversation': 'Fork létrehozása…',

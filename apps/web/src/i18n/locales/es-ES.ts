@@ -3455,6 +3455,7 @@ export const esES: Dict = {
   'assistant.workingLabel': 'Trabajando',
   'assistant.doneLabel': 'Listo',
   'assistant.prototypeQaAdvisory': '{count} pantallas sin verificación visual',
+  'assistant.visualReviewMismatch': 'el resultado puede no coincidir con lo pedido',
   'assistant.copyMarkdown': 'Copiar Markdown de la respuesta',
   'assistant.forkConversation': 'Bifurcar desde aquí',
   'assistant.forkingConversation': 'Bifurcando…',

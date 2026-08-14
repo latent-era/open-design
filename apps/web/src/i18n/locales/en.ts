@@ -3469,6 +3469,7 @@ export const en: Dict = {
   'assistant.workingLabel': 'Working',
   'assistant.doneLabel': 'Done',
   'assistant.prototypeQaAdvisory': '{count} screens not visually checked',
+  'assistant.visualReviewMismatch': 'render may not match the request',
   'assistant.copyMarkdown': 'Copy response markdown',
   'assistant.forkConversation': 'Fork from here',
   'assistant.forkingConversation': 'Forking…',
