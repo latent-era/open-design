@@ -8,13 +8,19 @@ import puppeteer, { type ConsoleMessage, type HTTPRequest, type Page } from 'pup
 export const PROTOTYPE_QA_RECEIPT_VERSION = 2;
 
 export interface PrototypeQaViewport {
-  name: 'mobile' | 'desktop';
+  name: 'mobile' | 'mobile-wide' | 'desktop';
   width: number;
   height: number;
 }
 
 export const PROTOTYPE_QA_VIEWPORTS: readonly PrototypeQaViewport[] = [
   { name: 'mobile', width: 390, height: 844 },
+  // A second phone width, deliberately ABOVE the 390px breakpoint most mobile
+  // media queries are written against. With only 390 and 1280, a fix scoped to
+  // `@media (max-width: 390px)` passed both — the rule applied at 390 and there
+  // was room at 1280 — while every width between stayed broken. 430 is a real
+  // device width (iPhone 15 Pro Max) and lands squarely in that gap.
+  { name: 'mobile-wide', width: 430, height: 932 },
   { name: 'desktop', width: 1280, height: 900 },
 ];
 

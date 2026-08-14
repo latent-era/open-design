@@ -880,7 +880,14 @@ export type PersistedAgentEvent =
     }
   | {
       kind: 'usage';
+      /** Tokens sent for this turn that were NOT served from cache. On a warm
+       *  conversation this is tiny, so it is the delta — not the context size.
+       *  Add `cachedInputTokens` to get what the model actually held. */
       inputTokens?: number;
+      /** Tokens served from the prompt cache. They still occupy the context
+       *  window, so a meter that ignores them under-reports enormously and
+       *  never warns. */
+      cachedInputTokens?: number;
       outputTokens?: number;
       costUsd?: number;
       durationMs?: number;

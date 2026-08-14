@@ -31,9 +31,14 @@ export function conversationContextUsage(
   let latest: number | null = null;
   for (const message of messages) {
     for (const event of message.events ?? []) {
-      if (event.kind === 'usage' && typeof event.inputTokens === 'number') {
-        latest = event.inputTokens;
-      }
+      if (event.kind !== 'usage') continue;
+      if (typeof event.inputTokens !== 'number') continue;
+      // Cache hits still occupy the window. `inputTokens` is only the
+      // uncached delta, which on a warm conversation is a handful of tokens —
+      // reading it alone reported a 30k conversation as ~90 and meant the
+      // meter could never warn before the model started failing.
+      const cached = typeof event.cachedInputTokens === 'number' ? event.cachedInputTokens : 0;
+      latest = event.inputTokens + cached;
     }
   }
   return contextUsage({ inputTokens: latest, model: activeModelId(config) });

@@ -1709,6 +1709,7 @@ function translateAgentEvent(data: DaemonAgentPayload): AgentEvent | null {
     return {
       kind: 'usage',
       inputTokens: usage.input_tokens,
+      cachedInputTokens: usage.cached_read_tokens,
       outputTokens: usage.output_tokens,
       costUsd: typeof data.costUsd === 'number' ? data.costUsd : undefined,
       durationMs: typeof data.durationMs === 'number' ? data.durationMs : undefined,

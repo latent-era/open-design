@@ -136,3 +136,38 @@ describe('latestHandoff', () => {
     expect(latestHandoff([turn('m1', 100)])).toBeNull();
   });
 });
+
+describe('cached tokens count toward the window', () => {
+  const usageTurn = (input: number, cached: number): ChatMessage =>
+    ({
+      id: 'm1',
+      role: 'assistant',
+      content: '',
+      events: [{ kind: 'usage', inputTokens: input, cachedInputTokens: cached }],
+    } as ChatMessage);
+
+  it('adds cache hits to the reported context', () => {
+    // input_tokens is only the UNCACHED delta. On a warm conversation almost
+    // everything is a cache hit, so reading it alone reported a 30k
+    // conversation as ~90 tokens and the meter could never warn.
+    const usage = conversationContextUsage([usageTurn(19, 14_341)], config('qwen3.6-35b'));
+    expect(usage?.used).toBe(14_360);
+  });
+
+  it('still works when nothing was cached', () => {
+    const usage = conversationContextUsage([usageTurn(52_000, 0)], config('qwen3.6-35b'));
+    expect(usage?.used).toBe(52_000);
+  });
+
+  it('warns once cache hits push it past the threshold', () => {
+    // The case that matters: a conversation is nearly full, but only because
+    // of cached history. Ignoring the cache means silence right up to failure.
+    const usage = conversationContextUsage([usageTurn(100, 60_000)], config('qwen3.6-35b'));
+    expect(usage?.level).toBe('warn');
+  });
+
+  it('tolerates a turn that reported no cache field', () => {
+    const usage = conversationContextUsage([usageTurn(1_000, undefined as never)], config('qwen3.6-35b'));
+    expect(usage?.used).toBe(1_000);
+  });
+});
