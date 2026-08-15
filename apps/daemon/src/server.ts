@@ -9626,6 +9626,18 @@ export async function startServer({
             codexScriptPath: process.env.OD_VISUAL_REVIEW_CODEX_SCRIPT,
           });
           if (!review) continue;
+          // A review that never happened must not read like one that passed.
+          // The local host returns 502 whenever it is busy with the agent, and
+          // that lands here as `unknown` — which deliberately never triggers a
+          // fix-it retry, so without this the page silently goes unexamined and
+          // the run looks identical to a clean one.
+          if (review.verdict === 'unknown') {
+            design.runs.emit(run, 'diagnostic', {
+              type: 'visual_review_unavailable',
+              file: relpath,
+              reason: review.note.slice(0, 300),
+            });
+          }
           // Keep the first dissenting verdict rather than the last page's, so
           // one screen reading wrong is not overwritten by a later one passing.
           // Interaction states, when the page declares any. Off by default:

@@ -157,6 +157,32 @@ function imageDataUrl(screenshotPath: string): string {
   return `data:${mime};base64,${base64}`;
 }
 
+/** How many times the local reviewer is asked before giving up. */
+export const MAX_LOCAL_REVIEW_ATTEMPTS = 2;
+/** Pause between those attempts, long enough for a busy slot to free. */
+export const LOCAL_REVIEW_RETRY_DELAY_MS = 2_000;
+
+/**
+ * Whether a reviewer failure is worth asking again about.
+ *
+ * The local host returns 502 while the agent still holds llama.cpp's slots —
+ * measured at roughly two failures for every success, each landing on a ~59s
+ * upstream timeout, while the same screenshot reviews in under ten seconds on
+ * an idle host. That is a queueing problem, not a bad request, and it is the
+ * difference between the fix-it loop firing and silently never running.
+ *
+ * A status the server chose deliberately (400, 404) is not retried: sending the
+ * same thing again gets the same answer and costs another minute.
+ */
+export function isTransientReviewFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError' || error.name === 'TimeoutError') return true;
+  if (error instanceof TypeError) return true;
+  return /\bHTTP (?:429|500|502|503|504)\b/u.test(error.message);
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+
 /** Ask the local vision-capable model. */
 async function reviewWithLocalModel(input: {
   screenshotPath: string;
@@ -165,11 +191,13 @@ async function reviewWithLocalModel(input: {
   endpoint: string;
   model: string;
   timeoutMs: number;
+  fetchImpl?: typeof fetch;
 }): Promise<VisualReviewOutcome> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const response = await fetch(`${input.endpoint.replace(/\/$/u, '')}/v1/chat/completions`, {
+    const doFetch = input.fetchImpl ?? fetch;
+    const response = await doFetch(`${input.endpoint.replace(/\/$/u, '')}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       signal: controller.signal,
@@ -178,6 +206,15 @@ async function reviewWithLocalModel(input: {
         // Thinking models spend most of the budget before answering, and a
         // truncated answer parses as `unknown`.
         max_tokens: 700,
+        // Turn reasoning off. This is not a tuning preference: with it on, the
+        // local Qwen writes its whole budget into `reasoning_content`, returns
+        // an empty `content`, and every such review parses as `unknown` — 9.9s
+        // spent to learn nothing. Off, the same review answers correctly in
+        // 0.6s, which also keeps it clear of the queue that was timing out at
+        // ~59s with a 502. Both spellings are sent because which one a runtime
+        // honours varies, and an unknown field is ignored.
+        chat_template_kwargs: { enable_thinking: false },
+        reasoning_effort: 'none',
         temperature: 0,
         messages: [{
           role: 'user',
@@ -190,9 +227,24 @@ async function reviewWithLocalModel(input: {
     });
     if (!response.ok) throw new Error(`local vision review failed: HTTP ${response.status}`);
     const body = await response.json() as {
-      choices?: Array<{ message?: { content?: string | null } }>;
+      choices?: Array<{
+        message?: { content?: string | null; reasoning_content?: string | null };
+      }>;
     };
-    const content = body.choices?.[0]?.message?.content ?? '';
+    const message = body.choices?.[0]?.message;
+    const content = message?.content ?? '';
+    // An empty answer alongside reasoning means the runtime ignored the
+    // thinking-off request and spent the budget deliberating. Say so, rather
+    // than reporting a bare `unknown` that reads the same as an unreachable
+    // host. The reasoning itself is deliberately NOT parsed for a verdict: it
+    // is a train of thought, and "No, wait —" is not a judgement about the page.
+    if (!content.trim() && (message?.reasoning_content ?? '').trim()) {
+      return {
+        verdict: 'unknown',
+        note: 'reviewer spent its whole budget on reasoning and returned no answer',
+        reviewer: 'local',
+      };
+    }
     return { ...parseVisualReviewVerdict(content), reviewer: 'local' };
   } finally {
     clearTimeout(timer);
@@ -254,23 +306,35 @@ export async function reviewRenderedPage(input: {
   localModel?: string | undefined;
   codexScriptPath?: string | undefined;
   timeoutMs?: number;
+  maxLocalAttempts?: number;
+  retryDelayMs?: number;
+  fetchImpl?: typeof fetch;
 }): Promise<VisualReviewOutcome | null> {
   if (!fs.existsSync(input.screenshotPath)) return null;
   const timeoutMs = input.timeoutMs ?? 120_000;
   const failures: string[] = [];
 
   if (input.localEndpoint && input.localModel) {
-    try {
-      return await reviewWithLocalModel({
-        screenshotPath: input.screenshotPath,
-        request: input.request,
-        stateName: input.stateName,
-        endpoint: input.localEndpoint,
-        model: input.localModel,
-        timeoutMs,
-      });
-    } catch (err) {
-      failures.push(`local: ${err instanceof Error ? err.message : String(err)}`);
+    const attempts = Math.max(1, input.maxLocalAttempts ?? MAX_LOCAL_REVIEW_ATTEMPTS);
+    const delayMs = input.retryDelayMs ?? LOCAL_REVIEW_RETRY_DELAY_MS;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await reviewWithLocalModel({
+          screenshotPath: input.screenshotPath,
+          request: input.request,
+          stateName: input.stateName,
+          endpoint: input.localEndpoint,
+          model: input.localModel,
+          timeoutMs,
+          ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+        });
+      } catch (err) {
+        failures.push(`local: ${err instanceof Error ? err.message : String(err)}`);
+        // Only a queueing failure earns another minute of someone's turn, and
+        // only while attempts remain.
+        if (attempt >= attempts || !isTransientReviewFailure(err)) break;
+        if (delayMs > 0) await sleep(delayMs);
+      }
     }
   }
 
