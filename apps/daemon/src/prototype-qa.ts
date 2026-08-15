@@ -51,6 +51,17 @@ export interface PrototypeQaState {
   name: string;
   className?: string;
   hoverSelector?: string;
+  /**
+   * The elements this state's rules act on.
+   *
+   * State rules live in a shared stylesheet, so every page linking it declares
+   * every state in it. These selectors are what lets the audit decide, before
+   * paying for a render, whether the state can do anything on THIS page.
+   *
+   * Empty means the rules restyle the root element itself, so the state always
+   * applies and there is nothing to look for.
+   */
+  targetSelectors?: string[];
 }
 
 export interface PrototypeQaStateResult {
@@ -84,6 +95,38 @@ const HOVER_ATTRIBUTE = 'data-od-hover';
  *
  * Pass the page's HTML plus the contents of its local stylesheets.
  */
+/**
+ * Pull the descendant selectors out of a state's rules.
+ *
+ * A deliberately small reader, not a CSS parser: it walks rule preludes and,
+ * for those mentioning `od-state-<name>`, keeps whatever follows the state
+ * class. `html.od-state-empty .sessions-list` yields `.sessions-list`. A
+ * prelude that IS the state class yields nothing, meaning the state restyles
+ * the root and always applies. Comments carry no prelude, so the comment naming
+ * the class above the rules contributes nothing.
+ */
+function stateTargetSelectors(sources: readonly string[], name: string): string[] {
+  const targets = new Set<string>();
+  const rulePattern = /([^{}]+)\{[^{}]*\}/gu;
+  const statePattern = new RegExp(`(?:^|[^\\w-])(?:[a-z]+)?\\.od-state-${name}(?![\\w-])`, 'iu');
+  for (const source of sources) {
+    if (typeof source !== 'string' || !source.includes(`od-state-${name}`)) continue;
+    rulePattern.lastIndex = 0;
+    let rule = rulePattern.exec(source);
+    while (rule) {
+      for (const selector of (rule[1] ?? '').split(',')) {
+        const trimmed = selector.trim();
+        const match = statePattern.exec(trimmed);
+        if (!match) continue;
+        const remainder = trimmed.slice(match.index + match[0].length).trim();
+        if (remainder) targets.add(remainder);
+      }
+      rule = rulePattern.exec(source);
+    }
+  }
+  return [...targets].sort();
+}
+
 export function discoverPrototypeStates(
   sources: readonly string[],
 ): PrototypeQaState[] {
@@ -103,7 +146,11 @@ export function discoverPrototypeStates(
   }
   const states: PrototypeQaState[] = [...names]
     .sort()
-    .map((name) => ({ name, className: `od-state-${name}` }));
+    .map((name) => ({
+      name,
+      className: `od-state-${name}`,
+      targetSelectors: stateTargetSelectors(sources, name),
+    }));
   if (hover) states.push({ name: 'hover', hoverSelector: `[${HOVER_ATTRIBUTE}]` });
   return states.slice(0, MAX_PROTOTYPE_QA_STATES);
 }
@@ -378,6 +425,9 @@ export async function runPrototypeAudit(input: {
   const results: PrototypeQaViewportResult[] = [];
   const stateResults: PrototypeQaStateResult[] = [];
   const states = discoverPrototypeStates(prototypeStateSources(projectRoot, relpath));
+  // Narrowed to the states that can affect this page, decided against the live
+  // DOM during the first render. Null until that first page has loaded.
+  let applicableStates: PrototypeQaState[] | null = null;
   try {
     for (const viewport of input.viewports ?? PROTOTYPE_QA_VIEWPORTS) {
       const page = await browser.newPage();
@@ -396,6 +446,39 @@ export async function runPrototypeAudit(input: {
           waitUntil: 'networkidle2',
           timeout: 30_000,
         });
+        // Decide here, on a page that is already loaded, which declared states
+        // can actually do anything to THIS page — before any state render is
+        // paid for. State rules live in shared stylesheets, so a page declares
+        // every state its stylesheet mentions; the boxing project's empty state
+        // is declared by all eight screens and meaningful on one. Testing the
+        // live DOM rather than the source catches markup built by scripts,
+        // which a static read of the HTML would miss.
+        if (applicableStates === null) {
+          applicableStates = [];
+          for (const state of states) {
+            const selectors = state.targetSelectors ?? [];
+            if (selectors.length === 0) {
+              // Restyles the root itself, or is a hover state with its own
+              // selector — nothing to look for.
+              applicableStates.push(state);
+              continue;
+            }
+            const present = await page.evaluate((candidates: string[]) => {
+              const doc = (globalThis as any).document;
+              return candidates.some((selector: string) => {
+                try {
+                  return doc.querySelector(selector) !== null;
+                } catch {
+                  // An exotic selector this browser cannot parse is not a
+                  // reason to drop the state; render it and let the capture
+                  // speak.
+                  return true;
+                }
+              });
+            }, selectors);
+            if (present) applicableStates.push(state);
+          }
+        }
         const screenshot = screenshotPath(projectRoot, input.outputDir ?? 'qa', relpath, viewport);
         await page.screenshot({ path: screenshot as `${string}.png`, type: 'png', fullPage: false });
         results.push({
@@ -414,7 +497,7 @@ export async function runPrototypeAudit(input: {
     // verification became too expensive to run last time.
     const stateViewport = (input.viewports ?? PROTOTYPE_QA_VIEWPORTS)[0];
     if (stateViewport) {
-      for (const state of states) {
+      for (const state of applicableStates ?? states) {
         const page = await browser.newPage();
         const runtimeIssues: PrototypeQaIssue[] = [];
         page.on('console', (message) => {

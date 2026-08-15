@@ -52,6 +52,14 @@ describe.skipIf(!enabled)('runPrototypeAudit captures declared states', () => {
     projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'od-qa-states-'));
     fs.writeFileSync(path.join(projectRoot, 'index.html'), PAGE, 'utf8');
     fs.writeFileSync(path.join(projectRoot, 'theme.css'), CSS, 'utf8');
+    // The production case: a second screen sharing the stylesheet, so it
+    // "declares" the empty state, while having nothing the state can act on.
+    fs.writeFileSync(
+      path.join(projectRoot, 'settings.html'),
+      '<!doctype html><html><head><link rel="stylesheet" href="theme.css"></head>'
+        + '<body><h1>Settings</h1><p>Nothing here is a session.</p></body></html>',
+      'utf8',
+    );
     server = http.createServer((req, res) => {
       const rel = decodeURIComponent((req.url ?? '').split('?')[0] ?? '')
         .replace(`/api/projects/${projectId}/files/`, '');
@@ -100,5 +108,28 @@ describe.skipIf(!enabled)('runPrototypeAudit captures declared states', () => {
     // three is the cost blow-up this design deliberately avoids.
     const stateViewports = new Set((receipt.states ?? []).map((s) => s.viewport.name));
     expect(stateViewports.size).toBe(1);
+  }, 180_000);
+
+  it('skips a state the page shares but cannot exhibit', async () => {
+    // settings.html links the same stylesheet, so it declares `empty` exactly
+    // as index.html does — but it has no `.sessions-list` or `.sessions-empty`.
+    // Rendering the state there would produce a capture identical to the normal
+    // view and a receipt entry implying something was checked. The hover state
+    // is likewise absent: no element carries data-od-hover.
+    const receipt = await runPrototypeAudit({
+      projectRoot,
+      projectId,
+      relpath: 'settings.html',
+      browserWsUrl: WS_URL!,
+      previewOrigin: `http://${PREVIEW_HOST}:${PORT}`,
+    });
+
+    expect(receipt.states ?? []).toEqual([]);
+
+    // And no stray state screenshots were written for it.
+    const shots = fs
+      .readdirSync(path.join(projectRoot, 'qa'))
+      .filter((name) => name.includes('settings') && name.includes('empty'));
+    expect(shots).toEqual([]);
   }, 180_000);
 });

@@ -99,3 +99,70 @@ describe('discoverPrototypeStates', () => {
     expect(discoverPrototypeStates(['', '   '])).toEqual([]);
   });
 });
+
+/**
+ * Which elements a state's rules actually act on.
+ *
+ * State rules live in the shared stylesheet, so every page that links it
+ * "declares" every state in it — the Manage screen's empty state is declared by
+ * all eight boxing screens. Rendering it on the seven that have no sessions
+ * list produces a capture identical to the normal view: a wasted render, and a
+ * receipt entry implying something was checked when nothing was.
+ *
+ * Knowing what a state targets is what lets the audit skip it on pages where it
+ * cannot do anything, BEFORE paying for the render.
+ */
+describe('discoverPrototypeStates target selectors', () => {
+  it('extracts the element a state rule acts on', () => {
+    const [state] = discoverPrototypeStates([
+      'html.od-state-empty .sessions-list { display: none; }',
+    ]);
+    expect(state?.targetSelectors).toEqual(['.sessions-list']);
+  });
+
+  it('collects every element the state touches', () => {
+    const [state] = discoverPrototypeStates([
+      'html.od-state-empty .sessions-list { display: none; }',
+      'html.od-state-empty .sessions-empty { display: block !important; }',
+    ]);
+    expect(state?.targetSelectors?.sort()).toEqual(['.sessions-empty', '.sessions-list']);
+  });
+
+  it('handles a bare class prefix as well as html.', () => {
+    const [state] = discoverPrototypeStates(['.od-state-empty .list { display: none }']);
+    expect(state?.targetSelectors).toEqual(['.list']);
+  });
+
+  it('splits a comma-separated rule into separate targets', () => {
+    const [state] = discoverPrototypeStates([
+      'html.od-state-empty .a, html.od-state-empty .b { display: none }',
+    ]);
+    expect(state?.targetSelectors?.sort()).toEqual(['.a', '.b']);
+  });
+
+  it('reports no targets when the state restyles the root itself', () => {
+    // `.od-state-loading { cursor: wait }` acts on the root element, so there
+    // is nothing to look for in the page — it always applies.
+    const [state] = discoverPrototypeStates(['.od-state-loading { cursor: wait }']);
+    expect(state?.targetSelectors).toEqual([]);
+  });
+
+  it('ignores a mention in a comment, which targets nothing', () => {
+    // The boxing stylesheet carries exactly this: a comment naming the class
+    // above the rules. It must not contribute a bogus target.
+    const [state] = discoverPrototypeStates([
+      '/* Sessions empty state toggle via od-state-empty class on <html> */',
+      'html.od-state-empty .sessions-list { display: none }',
+    ]);
+    expect(state?.targetSelectors).toEqual(['.sessions-list']);
+  });
+
+  it('does not attribute one state\'s targets to another', () => {
+    const states = discoverPrototypeStates([
+      'html.od-state-empty .list { display: none }',
+      'html.od-state-loading .spinner { display: block }',
+    ]);
+    expect(states.find((s) => s.name === 'empty')?.targetSelectors).toEqual(['.list']);
+    expect(states.find((s) => s.name === 'loading')?.targetSelectors).toEqual(['.spinner']);
+  });
+});
