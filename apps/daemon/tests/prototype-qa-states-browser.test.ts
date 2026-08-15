@@ -40,7 +40,7 @@ const CSS = `body{font:16px sans-serif;margin:0;padding:24px;background:#fff}
 .empty{display:none}
 .od-state-empty .list{display:none}
 .od-state-empty .empty{display:block}
-.cta{padding:12px 20px;background:#2b4cff;color:#fff;border:0;border-radius:8px}
+.cta{padding:16px 20px;min-height:44px;background:#2b4cff;color:#fff;border:0;border-radius:8px}
 .cta:hover{background:#ff2b6b}`;
 
 describe.skipIf(!enabled)('runPrototypeAudit captures declared states', () => {
@@ -63,6 +63,13 @@ describe.skipIf(!enabled)('runPrototypeAudit captures declared states', () => {
     server = http.createServer((req, res) => {
       const rel = decodeURIComponent((req.url ?? '').split('?')[0] ?? '')
         .replace(`/api/projects/${projectId}/files/`, '');
+      // The browser asks for a favicon unprompted; a 404 for it is a console
+      // error the audit rightly reports, and it would mask what this fixture is
+      // actually testing.
+      if (rel.includes('favicon')) {
+        res.writeHead(204).end();
+        return;
+      }
       const file = path.join(projectRoot, rel);
       if (!file.startsWith(projectRoot) || !fs.existsSync(file)) {
         res.writeHead(404).end('no');
@@ -108,6 +115,31 @@ describe.skipIf(!enabled)('runPrototypeAudit captures declared states', () => {
     // three is the cost blow-up this design deliberately avoids.
     const stateViewports = new Set((receipt.states ?? []).map((s) => s.viewport.name));
     expect(stateViewports.size).toBe(1);
+  }, 180_000);
+
+  it('reports a mostly-empty state without failing the turn', async () => {
+    // The failure someone who does not build apps is least able to name: an
+    // empty state hides a list, puts a short message in its place, and leaves
+    // most of the screen blank. Nothing overflows, nothing is clipped, so every
+    // other check passes it. It has to be reported — and it must not fail the
+    // turn, because "this looks airy" is a judgement, not a defect.
+    const receipt = await runPrototypeAudit({
+      projectRoot,
+      projectId,
+      relpath: 'index.html',
+      browserWsUrl: WS_URL!,
+      previewOrigin: `http://${PREVIEW_HOST}:${PORT}`,
+    });
+
+    const emptyState = (receipt.states ?? []).find((state) => state.state === 'empty');
+    const sparse = (emptyState?.issues ?? []).filter((issue) => issue.type === 'sparse');
+    expect(sparse).toHaveLength(1);
+    expect(sparse[0]?.advisory).toBe(true);
+    expect(sparse[0]?.message).toMatch(/% of the screen is empty/u);
+
+    // The whole point of the severity split: a sparse layout is reported and
+    // the turn still succeeds.
+    expect(receipt.passed).toBe(true);
   }, 180_000);
 
   it('skips a state the page shares but cannot exhibit', async () => {

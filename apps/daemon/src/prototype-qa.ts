@@ -25,12 +25,21 @@ export const PROTOTYPE_QA_VIEWPORTS: readonly PrototypeQaViewport[] = [
 ];
 
 export interface PrototypeQaIssue {
-  type: 'console' | 'page-error' | 'request' | 'overflow' | 'icon-font' | 'touch-target' | 'broken-link';
+  type: 'console' | 'page-error' | 'request' | 'overflow' | 'icon-font' | 'touch-target' | 'broken-link' | 'sparse';
   message: string;
   selector?: string;
   url?: string;
   width?: number;
   height?: number;
+  /**
+   * Worth reporting, not worth failing a turn over.
+   *
+   * A blocking check has to be one nobody would argue with — an element off
+   * the side of the screen is a defect in any design. Judgements about whether
+   * a layout looks finished are not in that class: airy is sometimes the point.
+   * Advisory issues reach the receipt and the agent, and leave `passed` alone.
+   */
+  advisory?: boolean;
 }
 
 export interface PrototypeQaViewportResult {
@@ -309,6 +318,59 @@ async function inspectPage(page: Page): Promise<PrototypeQaIssue[]> {
       return `${element.tagName.toLowerCase()}${className}`;
     };
 
+    // A screen that renders mostly nothing.
+    //
+    // The audit could already tell you an element was clipped or off-screen,
+    // but not that a screen simply looked unfinished — and that is the failure
+    // someone who does not build apps is least able to diagnose and most likely
+    // to hit, because it is what an empty or loading state does when it hides a
+    // list and puts nothing in its place.
+    //
+    // Measured as the largest continuous band of viewport with no content in
+    // it, which is what the eye actually registers. Only counted when the page
+    // does not scroll: on a scrolling page the space below the fold is the next
+    // screenful, not a hole.
+    const viewportHeight = document.documentElement.clientHeight;
+    const scrolls = document.documentElement.scrollHeight > viewportHeight + 1;
+    if (!scrolls && viewportHeight > 0) {
+      const bands: Array<{ top: number; bottom: number }> = [];
+      for (const element of Array.from(document.querySelectorAll('body *')) as any[]) {
+        if (!visible(element)) continue;
+        const hasOwnInk = Array.from(element.childNodes).some(
+          (node: any) => node.nodeType === 3 && (node.textContent || '').trim().length > 0,
+        ) || ['IMG', 'SVG', 'VIDEO', 'CANVAS', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].includes(element.tagName);
+        if (!hasOwnInk) continue;
+        const rect = element.getBoundingClientRect();
+        const top = Math.max(0, rect.top);
+        const bottom = Math.min(viewportHeight, rect.bottom);
+        if (bottom > top) bands.push({ top, bottom });
+      }
+      bands.sort((a, b) => a.top - b.top);
+      let cursor = 0;
+      let largestGap = 0;
+      let gapAt = 0;
+      for (const band of bands) {
+        if (band.top - cursor > largestGap) {
+          largestGap = band.top - cursor;
+          gapAt = cursor;
+        }
+        cursor = Math.max(cursor, band.bottom);
+      }
+      if (viewportHeight - cursor > largestGap) {
+        largestGap = viewportHeight - cursor;
+        gapAt = cursor;
+      }
+      const ratio = largestGap / viewportHeight;
+      if (ratio >= 0.3) {
+        issues.push({
+          type: 'sparse',
+          advisory: true,
+          message: `${Math.round(ratio * 100)}% of the screen is empty in one band (${Math.round(largestGap)}px from y=${Math.round(gapAt)}); the layout may read as unfinished`,
+          selector: 'body',
+        });
+      }
+    }
+
     const viewportWidth = document.documentElement.clientWidth;
     if (document.documentElement.scrollWidth > viewportWidth + 1 || document.body.scrollWidth > viewportWidth + 1) {
       issues.push({
@@ -568,9 +630,12 @@ export async function runPrototypeAudit(input: {
     // A state that renders broken fails the page. This is the point of
     // capturing them: an empty state that collapses to a blank panel is a real
     // defect, and it was previously invisible to every check in the product.
+    // Advisory issues are excluded deliberately. A turn whose edits succeeded
+    // must not fail because a layout was judged airy — that is the shape of
+    // failure that made verification feel like an obstacle rather than a help.
     passed:
-      results.every((result) => result.issues.length === 0) &&
-      stateResults.every((result) => result.issues.length === 0),
+      results.every((result) => result.issues.every((issue) => issue.advisory)) &&
+      stateResults.every((result) => result.issues.every((issue) => issue.advisory)),
     viewports: results,
     ...(stateResults.length > 0 ? { states: stateResults } : {}),
   };
