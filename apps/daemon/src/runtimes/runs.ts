@@ -521,6 +521,7 @@ function durableRunState(run) {
     ...(Array.isArray(run.fileVersions) ? { fileVersions: run.fileVersions } : {}),
     ...(Array.isArray(run.prototypeQaAdvisory) ? { prototypeQaAdvisory: run.prototypeQaAdvisory } : {}),
     ...(run.visualReview ? { visualReview: run.visualReview } : {}),
+    ...(run.taskRouting ? { taskRouting: run.taskRouting } : {}),
     endedWithUnfinishedWork: Boolean(run.endedWithUnfinishedWork),
     ...(typeof run.userPrompt === 'string' ? { userPrompt: run.userPrompt } : {}),
     ...(typeof run.model === 'string' ? { model: run.model } : {}),
@@ -1134,6 +1135,7 @@ export function createChatRunService({
     ...(Array.isArray(run.fileVersions) ? { fileVersions: run.fileVersions } : {}),
     ...(Array.isArray(run.prototypeQaAdvisory) ? { prototypeQaAdvisory: run.prototypeQaAdvisory } : {}),
     ...(run.visualReview ? { visualReview: run.visualReview } : {}),
+    ...(run.taskRouting ? { taskRouting: run.taskRouting } : {}),
     eventsLogPath: run.eventsLogPath ?? null,
     workspace: projectWorkspaceProvenance(run.projectMetadata),
     mediaExecution: run.mediaExecution ?? normalizeMediaExecutionPolicyForRun(null),
@@ -1209,6 +1211,7 @@ export function createChatRunService({
       ...(Array.isArray(run.fileVersions) ? { fileVersions: run.fileVersions } : {}),
       ...(Array.isArray(run.prototypeQaAdvisory) ? { prototypeQaAdvisory: run.prototypeQaAdvisory } : {}),
       ...(run.visualReview ? { visualReview: run.visualReview } : {}),
+      ...(run.taskRouting ? { taskRouting: run.taskRouting } : {}),
       failureCategory: run.failureCategory ?? null,
       failureDetail: run.failureDetail ?? null,
     });

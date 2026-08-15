@@ -10138,6 +10138,25 @@ export async function startServer({
           candidates: routingCandidatesFromAgents(roster),
           selectedAgentId: def.id,
         });
+        // Carried on the run, not only as a diagnostic: diagnostic events are
+        // filtered out of the chat stream, so a routing verdict emitted only
+        // that way reaches nobody — the same "reported and never read" failure
+        // this whole area exists to remove. Set only when there is something
+        // worth saying, so a task that comfortably fits stays silent.
+        if (routing && (!routing.fits || !routing.matchesSelection)) {
+          run.taskRouting = {
+            estimatedTokens,
+            model: safeModel,
+            contextWindow: selectedWindow,
+            fits: routing.fits,
+            reason: routing.reason,
+            ...(routing.matchesSelection ? {} : {
+              recommendedAgentId: routing.agentId,
+              recommendedModel: routing.model,
+              recommendedContextWindow: routing.contextWindow,
+            }),
+          };
+        }
         design.runs.emit(run, 'diagnostic', {
           type: 'task_routing',
           estimated_tokens: estimatedTokens,

@@ -1103,6 +1103,12 @@ function AssistantMessageImpl({
                     message.visualReview?.verdict === 'not-satisfied'
                       ? message.visualReview.note
                       : undefined,
+                  visualReviewUnavailable:
+                    message.visualReview?.verdict === 'unknown'
+                      ? message.visualReview.note
+                      : undefined,
+                  taskRoutingReason: message.taskRouting?.reason,
+                  taskRoutingRecommendedModel: message.taskRouting?.recommendedModel,
                   undoProjectId: projectId,
                   undoMessageId: message.id,
                   canUndo: (message.fileVersions?.length ?? 0) > 0 && !message.undoneAt,
@@ -1134,6 +1140,13 @@ function AssistantMessageImpl({
                     ? message.visualReview.note
                     : undefined
                 }
+                visualReviewUnavailable={
+                  message.visualReview?.verdict === 'unknown'
+                    ? message.visualReview.note
+                    : undefined
+                }
+                taskRoutingReason={message.taskRouting?.reason}
+                taskRoutingRecommendedModel={message.taskRouting?.recommendedModel}
                 undoProjectId={projectId}
                 undoMessageId={message.id}
                 canUndo={(message.fileVersions?.length ?? 0) > 0 && !message.undoneAt}
@@ -1596,6 +1609,13 @@ interface AssistantFooterProps {
    *  Advisory: it reports a turn whose own screenshot contradicts it, and
    *  never blocks. */
   visualReviewNote?: string | undefined;
+  /** The render was never actually checked — reviewer unreachable or unable to
+   *  answer. Distinct from a clean review, which is what it used to look like. */
+  visualReviewUnavailable?: string | undefined;
+  /** Why this turn may not suit the selected model. Advisory only. */
+  taskRoutingReason?: string | undefined;
+  /** Names a better-suited installed agent, when there is one. */
+  taskRoutingRecommendedModel?: string | undefined;
   // Undo is offered only when this turn actually versioned files and has not
   // already been rewound. Both come from the run's recorded versions, so a
   // prose-only turn shows no control at all.
@@ -1623,6 +1643,9 @@ function AssistantFooter({
   durationMs,
   advisoryCount = 0,
   visualReviewNote,
+  visualReviewUnavailable,
+  taskRoutingReason,
+  taskRoutingRecommendedModel,
   undoProjectId = null,
   undoMessageId,
   canUndo = false,
@@ -1675,8 +1698,34 @@ function AssistantFooter({
             </span>
           ) : null}
           {visualReviewNote ? (
-            <span className="assistant-qa-advisory" data-testid="assistant-visual-review">
+            <span
+              className="assistant-qa-advisory"
+              data-testid="assistant-visual-review"
+              title={visualReviewNote}
+            >
               {t("assistant.visualReviewMismatch")}
+            </span>
+          ) : null}
+          {/* A render nobody managed to look at used to be indistinguishable
+              from one that passed. Say which it was. */}
+          {visualReviewUnavailable ? (
+            <span
+              className="assistant-qa-advisory"
+              data-testid="assistant-visual-review-unavailable"
+              title={visualReviewUnavailable}
+            >
+              {t("assistant.visualReviewUnavailable")}
+            </span>
+          ) : null}
+          {taskRoutingReason ? (
+            <span
+              className="assistant-qa-advisory"
+              data-testid="assistant-task-routing"
+              title={taskRoutingReason}
+            >
+              {taskRoutingRecommendedModel
+                ? t("assistant.taskSuitsOtherModel", { model: taskRoutingRecommendedModel })
+                : t("assistant.taskTooLargeForModel")}
             </span>
           ) : null}
         </>

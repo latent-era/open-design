@@ -217,6 +217,57 @@ process.stdin.on('end', () => {
     expect(hoisted.reviewCount).toBe(2);
   }, 120_000);
 
+  it('tells the client when a task does not fit the model it is running on', async () => {
+    // The routing verdict was emitted only as a diagnostic, and diagnostics are
+    // filtered out of the chat stream — so it reached nobody. It now rides on
+    // the run, which means it has to survive the serializers in runtimes/runs.ts:
+    // a field set on the run with no serializer is this repo's most repeated
+    // bug, and it is invisible until someone looks for it downstream.
+    const projectId = `proj-${randomUUID()}`;
+    await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: projectId, name: 'routing fixture' }),
+    });
+    const binDir = mkdtempSync(join(tmpdir(), 'od-routing-bin-'));
+    tempDirs.push(binDir);
+    await fsp.writeFile(
+      join(binDir, 'opencode'),
+      '#!/usr/bin/env node\n'
+        + 'process.stdin.on("data",()=>{});process.stdin.on("end",()=>{\n'
+        + '  console.log(JSON.stringify({ type: "step_start", sessionID: "routing" }));\n'
+        + '  console.log(JSON.stringify({ type: "text", sessionID: "routing", part: { text: "ok" } }));\n'
+        + '  console.log(JSON.stringify({ type: "step_finish", part: { tokens: { input: 1, output: 1 } } }));\n'
+        + '  process.exit(0);\n});\n',
+    );
+    await fsp.chmod(join(binDir, 'opencode'), 0o755);
+    process.env.PATH = `${binDir}:${originalPath ?? ''}`;
+
+    // Comfortably past 80% of the 35b's 65,536-token window at ~4 chars/token.
+    const oversized = `describe this project in detail. ${'x'.repeat(260_000)}`;
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentId: 'opencode',
+        projectId,
+        conversationId: `conv-${randomUUID()}`,
+        model: 'qwen3.6-35b',
+        message: oversized,
+      }),
+    });
+    const body = await response.text();
+
+    expect(body).toContain('taskRouting');
+    expect(body).toContain('"fits":false');
+  }, 120_000);
+
+  it('stays silent about routing when the task fits comfortably', async () => {
+    // Advisories that fire on every turn stop being read.
+    const { body } = await driveTurn();
+    expect(body).not.toContain('taskRouting');
+  }, 120_000);
+
   it('stops at one retry even when the reviewer never relents', async () => {
     // The property the whole design rests on. A reviewer that dissents on
     // every look must not be able to drive turn after turn: the verdict is

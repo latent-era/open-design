@@ -4327,6 +4327,9 @@ export interface Dict {
   'assistant.doneLabel': string;
   'assistant.prototypeQaAdvisory': string;
   'assistant.visualReviewMismatch': string;
+  'assistant.visualReviewUnavailable': string;
+  'assistant.taskTooLargeForModel': string;
+  'assistant.taskSuitsOtherModel': string;
   'assistant.copyMarkdown': string;
   'assistant.forkConversation': string;
   'assistant.forkingConversation': string;

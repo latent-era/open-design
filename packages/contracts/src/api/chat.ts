@@ -641,6 +641,28 @@ export interface VisualReview {
   file?: string;
 }
 
+/**
+ * What this turn costs against the window it actually has.
+ *
+ * Only present when there is something to say — the task does not fit, or a
+ * better-suited model is installed. A user cannot be expected to work out that
+ * their project plus a few reference images is already three quarters of a 65k
+ * window, and until this surfaced the only signal was the turn dying at the
+ * ceiling.
+ */
+export interface TaskRoutingAdvisory {
+  estimatedTokens: number;
+  model: string;
+  contextWindow: number;
+  /** False when the task exceeds what the selected model can hold. */
+  fits: boolean;
+  /** Present when a different installed agent would suit the task better. */
+  recommendedAgentId?: string;
+  recommendedModel?: string;
+  recommendedContextWindow?: number;
+  reason: string;
+}
+
 export interface ChatRunStatusResponse {
   id: string;
   projectId: string | null;
@@ -946,6 +968,9 @@ export interface ChatMessage {
    *  Advisory: a probabilistic judgement must not block a turn, but it does
    *  surface a turn that reported work its own screenshot contradicts. */
   visualReview?: VisualReview;
+  /** Set only when the task does not fit the selected model, or a better-suited
+   *  one is installed. A recommendation, never a substitution. */
+  taskRouting?: TaskRoutingAdvisory;
   feedback?: ChatMessageFeedback;
   /**
    * Request-only marker for the final assistant-message persistence pass.
