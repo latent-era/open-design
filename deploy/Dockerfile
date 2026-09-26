@@ -81,7 +81,7 @@ COPY plugins/_official ./plugins/_official
 FROM ${RUNTIME_IMAGE}
 
 RUN apk add --no-cache tini poppler-utils bash git && \
-    npm install --global @openai/codex@0.147.0 opencode-ai@1.18.16 && \
+    npm install --global @openai/codex@0.147.0 opencode-ai@1.18.16 @anthropic-ai/claude-code@2.1.283 && \
     npm cache clean --force && \
     addgroup -S -g 1001 open-design && \
     adduser -S -D -H -u 1001 -G open-design open-design
